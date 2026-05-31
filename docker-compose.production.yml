@@ -27,6 +27,11 @@ services:
   app:
     image: ghcr.io/radekhulan/myinvoice:latest   # pin na konkrétní verzi v produkci, např. :3.6.0
     restart: unless-stopped
+    networks:
+      default: {}
+      web:
+        aliases:
+          - myinvoice
     depends_on:
       db:
         condition: service_healthy
@@ -36,6 +41,10 @@ services:
       # OPTIONAL — image už obsahuje stub `cfg.php`. Pro full-ENV deploy (Railway,
       # Heroku, Fly.io) lze tento mount vynechat a vše předat přes ENV (12-factor).
       - ./cfg.docker.php:/var/www/html/cfg.php:ro
+      - ./styles/invoice.css:/var/www/html/styles/invoice.css:ro
+      - ./api/templates/invoice/invoice.twig:/var/www/html/api/templates/invoice/invoice.twig:ro
+      - ./api/src/Service/Pdf/PdfBranding.php:/var/www/html/api/src/Service/Pdf/PdfBranding.php:ro
+      - ./api/src/Service/Pdf/InvoicePdfRenderer.php:/var/www/html/api/src/Service/Pdf/InvoicePdfRenderer.php:ro
       # Single-volume layout (od 3.6.0).
       - app-data:/data
     environment:
@@ -89,3 +98,7 @@ volumes:
   db-data:
   app-data:
   redis-data:
+
+networks:
+  web:
+    external: true
