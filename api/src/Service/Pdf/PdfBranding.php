@@ -84,12 +84,15 @@ final class PdfBranding
         $lineSoft   = AccentColor::tint($color, 0.24);
         $lineMedium = AccentColor::tint($color, 0.28);
         $badgeBorder = AccentColor::tint($color, 0.30);
+        $bandLabel  = AccentColor::tint($color, 0.45); // světlý odstín brandu pro popisky v pruhu
 
         return "\n/* ─── Branding override (per-supplier accent color) ─── */\n"
             . ".head { border-bottom-color: {$color}; }\n"
             . ".brand-name, .doc-type { color: {$color}; }\n"
-            . ".parties h2, td.meta-label, .bank-label, .qr-box .qr-label { color: {$color}; }\n"
+            . ".party-h, td.meta-label, .bank-label, .qr-box .qr-label { color: {$color}; }\n"
             . "table.items th { background: {$color}; }\n"
+            . "table.pay-band { background: {$color}; }\n"
+            . "table.pay-band .pb-meta { color: {$bandLabel}; }\n"
             . "table.totals-table tr.grand td { background: {$color}; }\n"
             . "table.totals-table tr.to-pay td { border-top-color: {$color}; color: {$color}; background: {$bgSoft}; }\n"
             . "table.totals-table tr.subtotal td { border-top-color: {$lineSoft}; }\n"

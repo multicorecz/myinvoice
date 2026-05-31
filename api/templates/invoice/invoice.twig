@@ -57,13 +57,14 @@
 {# ─── STRANY ─── #}
 <table class="parties">
   <tr>
-    <td>
-      <h2>{{ t('Dodavatel', 'Supplier') }}</h2>
+    <td class="party-supplier">
+      <div class="party-h">{{ t('Dodavatel', 'Supplier') }}</div>
       <div class="spacer-3">&nbsp;</div>
       <div class="party-name">{{ supplier.company_name }}</div>
       {% if supplier.display_name and supplier.display_name != supplier.company_name %}
         <div>{{ supplier.display_name }}</div>
       {% endif %}
+      <div class="spacer-2">&nbsp;</div>
       <div>{{ supplier.street }}</div>
       <div>{{ supplier.zip }} {{ supplier.city }}</div>
       <div>{{ locale == 'en' ? supplier.country_name_en : supplier.country_name_cs }}</div>
@@ -74,12 +75,13 @@
       </div>
     </td>
     <td>
-      <h2>{{ t('Odběratel', 'Customer') }}</h2>
+      <div class="party-h">{{ t('Odběratel', 'Customer') }}</div>
       <div class="spacer-3">&nbsp;</div>
       <div class="party-name">{{ client.company_name }}</div>
       {% if client.first_name or client.last_name %}
         <div>{{ client.first_name }} {{ client.last_name }}</div>
       {% endif %}
+      <div class="spacer-2">&nbsp;</div>
       <div>{{ client.street }}</div>
       <div>{{ client.zip }} {{ client.city }}</div>
       <div>{{ locale == 'en' ? client.country_name_en : client.country_name_cs }}</div>
@@ -93,33 +95,26 @@
 </table>
 
 {# ─── METADATA ─── #}
+{# Var. symbol + konstantní symbol jsou nově v platebním pruhu (pay-band) níže. #}
 <table class="meta-grid">
   <tr>
     <td class="meta-label">{{ t('Vystaveno', 'Issued') }}</td>
     <td class="meta-value">{{ invoice.issue_date|date(date_format) }}</td>
-    <td class="meta-label">{{ t('Var. symbol', 'Var. symbol') }}</td>
-    <td class="meta-value mono">{{ invoice.varsymbol|default('—') }}</td>
-  </tr>
-  {% if not supplier.is_vat_payer %}
-  <tr>
-    <td class="meta-label">{{ t('DPH', 'VAT') }}</td>
-    <td class="meta-value" colspan="3">{{ t('Není plátce DPH', 'Not a VAT payer') }}</td>
-  </tr>
-  {% elseif invoice.tax_date and invoice.invoice_type != 'proforma' %}
-  <tr>
-    <td class="meta-label">{{ t('DUZP', 'Tax point') }}</td>
-    <td class="meta-value">{{ invoice.tax_date|date(date_format) }}</td>
-    <td class="meta-label">{{ t('KS', 'Const. symbol') }}</td>
-    <td class="meta-value mono">0308</td>
-  </tr>
-  {% endif %}
-  <tr>
     <td class="meta-label">{{ t('Splatnost', 'Due') }}</td>
     <td class="meta-value">{{ invoice.due_date|date(date_format) }}</td>
+  </tr>
+  <tr class="meta-sep">
+    {% if not supplier.is_vat_payer %}
+      <td class="meta-label">{{ t('DPH', 'VAT') }}</td>
+      <td class="meta-value">{{ t('Není plátce DPH', 'Not a VAT payer') }}</td>
+    {% else %}
+      <td class="meta-label">{{ t('DUZP', 'Tax point') }}</td>
+      <td class="meta-value">{{ invoice.tax_date ? invoice.tax_date|date(date_format) : '—' }}</td>
+    {% endif %}
     <td class="meta-label">{{ t('Měna', 'Currency') }}</td>
     <td class="meta-value mono">{{ invoice.currency }}</td>
   </tr>
-  <tr>
+  <tr class="meta-sep">
     <td class="meta-label">{{ t('Úhrada', 'Payment') }}</td>
     <td class="meta-value">
       {%- if payment_method == 'card' -%}{{ t('Platební karta', 'Card') }}
@@ -135,7 +130,7 @@
     {% endif %}
   </tr>
   {% if invoice.project_number or invoice.contract_number %}
-  <tr>
+  <tr class="meta-sep">
     {% if invoice.project_number %}
       <td class="meta-label">{{ t('Vaše číslo', 'Your order no.') }}</td>
       <td class="meta-value mono">{{ invoice.project_number }}</td>
@@ -152,16 +147,73 @@
   {% endif %}
 </table>
 
+{# ─── PLATEBNÍ PRUH (přes celou šířku) — bankovní spojení + symboly + QR ─── #}
+<table class="pay-band">
+  <tr>
+    {# Záměrně bez „UHRAZENO" varianty — i u zaplacené faktury ukazujeme vždy bankovní
+       spojení (QR se u zaplacených stejně negeneruje, viz qr_data_uri v rendereru). #}
+    {% if payment_method == 'card' %}
+    <td class="pb-cell">
+      <div class="pb-label">{{ t('Způsob úhrady', 'Payment method') }}</div>
+      <div class="pb-strong">{{ t('Platební karta', 'Card') }}</div>
+      <div class="pb-meta">{{ t('Bankovní převod ani QR se nepoužije.', 'Bank transfer and QR are not used.') }}</div>
+    </td>
+    {% elseif payment_method == 'cash' %}
+    <td class="pb-cell">
+      <div class="pb-label">{{ t('Způsob úhrady', 'Payment method') }}</div>
+      <div class="pb-strong">{{ t('Hotově', 'Cash') }}</div>
+    </td>
+    {% elseif bank %}
+    <td class="pb-cell pb-bank">
+      <div class="pb-label">{{ t('Bankovní spojení', 'Bank account') }}</div>
+      <div class="pb-gap">&nbsp;</div>
+      <table class="pb-rows">
+        {% if bank.account_number %}
+        <tr><td class="pb-k">{{ t('Účet', 'Account') }}</td><td class="pb-v">{{ bank.account_number }}{% if bank.bank_code %} / {{ bank.bank_code }}{% endif %}</td></tr>
+        {% endif %}
+        {% if bank.iban %}
+        <tr><td class="pb-k">IBAN</td><td class="pb-v">{{ bank.iban }}</td></tr>
+        {% endif %}
+        {% if bank.bic %}
+        <tr><td class="pb-k">SWIFT</td><td class="pb-v">{{ bank.bic }}</td></tr>
+        {% endif %}
+        {% if bank.bank_name %}
+        <tr><td class="pb-k">{{ t('Banka', 'Bank') }}</td><td class="pb-v">{{ bank.bank_name }}</td></tr>
+        {% endif %}
+      </table>
+    </td>
+    <td class="pb-cell pb-symbols">
+      <div class="pb-label">{{ t('Symbol', 'Symbol') }}</div>
+      <div class="pb-gap">&nbsp;</div>
+      <table class="pb-rows">
+        {% if invoice.varsymbol %}
+        <tr><td class="pb-k">{{ t('Variabilní', 'Variable') }}</td><td class="pb-v">{{ invoice.varsymbol }}</td></tr>
+        {% endif %}
+        <tr><td class="pb-k">{{ t('Konstantní', 'Constant') }}</td><td class="pb-v">0308</td></tr>
+        {% if is_paid %}
+        <tr><td colspan="2" class="pb-paid">{{ t('UHRAZENO', 'PAID') }}</td></tr>
+        {% endif %}
+      </table>
+    </td>
+    {% if qr_data_uri %}
+    <td class="pb-cell pb-qr">
+      <div class="pb-qr-box"><img src="{{ qr_data_uri }}" alt="QR" width="105" height="105"></div>
+    </td>
+    {% endif %}
+    {% endif %}
+  </tr>
+</table>
+
+{# ─── POLOŽKY ─── #}
+{# Volitelný text nad položkami z pole invoice.note_above_items (žádný pevný úvodní řádek). #}
 {% if invoice.note_above_items %}
 <div class="note">{{ invoice.note_above_items|nl2br }}</div>
 {% endif %}
-
-{# ─── POLOŽKY ─── #}
 <table class="items">
   <thead>
     <tr>
       {% if supplier.is_vat_payer %}
-      <th style="width:30%">{{ t('Popis', 'Description') }}</th>
+      <th style="width:60%">{{ t('Popis', 'Description') }}</th>
       <th class="num nowrap" style="width:7%">{{ t('Mn.', 'Qty') }}</th>
       <th class="nowrap" style="width:7%">{{ t('Jed.', 'Unit') }}</th>
       <th class="num nowrap" style="width:13%">{{ t('Cena/j', 'Price/unit') }}</th>
@@ -224,92 +276,8 @@
 </div>
 {% endif %}
 
-{# ─── SUMACE + QR/BANK ─── #}
-<table class="totals">
-  <tr>
-    <td class="left">
-      <table style="width:100%;border-collapse:collapse;">
-        <tr>
-          <td style="vertical-align:top;padding-right:3mm;width:33mm;">
-            {% if qr_data_uri %}
-            <div class="qr-box">
-              <img src="{{ qr_data_uri }}" alt="QR" width="105" height="105">
-              <div class="qr-label">QR Pay</div>
-            </div>
-            {% endif %}
-          </td>
-          <td style="vertical-align:top;">
-            {% if is_paid %}
-            <table class="bank-frame paid-stamp">
-              <tr>
-                <td>
-                  <div class="bank-label" style="color:#2E7D32;">{{ t('UHRAZENO', 'PAID') }}</div>
-                  <div class="spacer-3">&nbsp;</div>
-                  <div class="bank-value" style="color:#2E7D32;">
-                    {%- if payment_method == 'card' -%}{{ t('Platba kartou online', 'Paid online by card') }}
-                    {%- elseif payment_method == 'cash' -%}{{ t('Hotově', 'Cash') }}
-                    {%- else -%}{{ t('Neplaťte prosím znovu', 'Do not pay again') }}{%- endif -%}
-                  </div>
-                  {% if invoice.paid_at %}
-                    <div class="spacer-2">&nbsp;</div>
-                    <div class="bank-meta-line">{{ t('Datum úhrady', 'Paid on') }}: {{ invoice.paid_at|date(date_format) }}</div>
-                  {% endif %}
-                </td>
-              </tr>
-            </table>
-            {% elseif payment_method == 'card' %}
-            <table class="bank-frame">
-              <tr>
-                <td>
-                  <div class="bank-label">{{ t('Způsob úhrady', 'Payment method') }}</div>
-                  <div class="spacer-3">&nbsp;</div>
-                  <div class="bank-value">{{ t('Platební karta', 'Card') }}</div>
-                  <div class="spacer-2">&nbsp;</div>
-                  <div class="bank-meta-line">{{ t('Bankovní převod ani QR se nepoužije.', 'Bank transfer and QR are not used.') }}</div>
-                </td>
-              </tr>
-            </table>
-            {% elseif payment_method == 'cash' %}
-            <table class="bank-frame">
-              <tr>
-                <td>
-                  <div class="bank-label">{{ t('Způsob úhrady', 'Payment method') }}</div>
-                  <div class="spacer-3">&nbsp;</div>
-                  <div class="bank-value">{{ t('Hotově', 'Cash') }}</div>
-                </td>
-              </tr>
-            </table>
-            {% elseif bank %}
-            <table class="bank-frame">
-              <tr>
-                <td>
-                  <div class="bank-label">{{ t('Bankovní spojení', 'Bank account') }}</div>
-                  <div class="spacer-3">&nbsp;</div>
-                  {% if bank.account_number %}
-                    <div class="bank-value">{{ bank.account_number }}{% if bank.bank_code %} / {{ bank.bank_code }}{% endif %}</div>
-                  {% endif %}
-                  {% if bank.iban %}
-                    <div class="bank-value">{{ bank.iban }}</div>
-                  {% endif %}
-                  {% if bank.bic or bank.bank_name %}
-                    <div class="spacer-2">&nbsp;</div>
-                  {% endif %}
-                  {% if bank.bic %}
-                    <div class="bank-meta-line">BIC: {{ bank.bic }}</div>
-                  {% endif %}
-                  {% if bank.bank_name %}
-                    <div class="bank-meta-line">{{ t('Banka', 'Bank') }}: {{ bank.bank_name }}</div>
-                  {% endif %}
-                </td>
-              </tr>
-            </table>
-            {% endif %}
-          </td>
-        </tr>
-      </table>
-    </td>
-    <td class="right">
-      <table class="totals-table">
+{# ─── REKAPITULACE (ceny celkem, vpravo) — bankovní část je nově v platebním pruhu výše ─── #}
+<table class="totals-table">
         {% if supplier.is_vat_payer and invoice.invoice_type != 'proforma' %}
         {% for b in invoice.vat_breakdown %}
         <tr>
@@ -358,9 +326,6 @@
           </td>
         </tr>
         {% endif %}
-      </table>
-    </td>
-  </tr>
 </table>
 
 {% if invoice.czk_recap %}

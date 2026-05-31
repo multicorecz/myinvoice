@@ -37,3 +37,8 @@ desktop.ini
 # Legacy: storage/xsd/ se už nepoužívá — zde držíme jen mpdf-temp/ exempci.
 storage/mpdf-temp/*
 !storage/mpdf-temp/.gitkeep
+
+# Custom faktura — dev artefakty
+preview/
+.claude/
+*.bak.*
