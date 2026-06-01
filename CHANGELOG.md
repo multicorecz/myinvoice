@@ -5,7 +5,51 @@ All notable changes to MyInvoice.cz are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [4.9.3] — 2026-06-01
+
+Per-faktura příznak „Osvobozeno od daně z příjmů" pro doklady mimo základ daně z příjmů (§ 4 ZDP / přefakturace) a sada vylepšení navigace — rychlé vytváření dokladů z horní lišty i bočního menu, předvyplnění zálohové faktury z odkazu a zpřehlednění dashboardu.
+
+### Added
+
+- **Příznak „Osvobozeno od daně z příjmů" na vydané faktuře ([#77](https://github.com/radekhulan/myinvoice/issues/77)).** Pro doklady, které nejsou základem daně z příjmů, ale pro DPH zůstávají běžným zdanitelným plněním — typicky prodej movité věci osvobozený dle § 4 odst. 1 písm. c) ZDP (vozidlo > 1 rok od nabytí) nebo přefakturace / průběžné položky (§ 23 odst. 4 ZDP). Příznak vyloučí částku ze základu daně z příjmů (výkaz DPFO/DPPO i daňový optimalizátor) a u OSVČ tím i z vyměřovacího základu SP/ZP (odvozen z dílčího základu § 7); ve výkazu se ukáže řádek „z toho osvobozeno". **DPH, kontrolní hlášení ani tržby/obrat nejsou dotčeny** (osvobození od daně z příjmů ≠ od DPH). Checkbox se v editoru nabízí jen u OSVČ — u s.r.o. § 4 neplatí a prodej majetku je vždy zdanitelný výnos.
+- **Rychlé vytváření z navigace.** V horní liště přibylo decentní tlačítko „+ Vytvořit" s menu (vydaná i zálohová faktura, pravidelná fakturace, klient, dodavatel, přijatá faktura) a v bočním menu nenápadné „+" u příslušných položek (objeví se po najetí myší). Dostupné jen pro uživatele s právem zápisu.
+- **Předvyplnění zálohové faktury z odkazu.** `/invoices/new?type=proforma` otevře editor rovnou jako zálohovou fakturu (lze kombinovat s `&client_id=`).
+
+### Changed
+
+- **Zpřehlednění dashboardu.** Odebrána redundantní akční tlačítka (přesunuta do „+ Vytvořit" v liště) i uvítací text a nadpis, aby stránka začínala rovnou daty.
+
+### Fixed
+
+- **ISDOC export — odběratel bez IČO.** Když klient nemá vyplněné IČO (typicky B2C / fyzická osoba), posílal se fiktivní `<ID>0</ID>`. Nově se vyzařuje prázdný `<ID></ID>` (XSD validní), takže účetní software nedostává neexistující identifikátor.
+- **Přepínání role Klient ⇄ Dodavatel při zakládání.** Přechod mezi „Nový klient" a „Nový dodavatel" (stejná stránka, jen jiný parametr) nepřeklopil roli formuláře, takže záznam mohl vzniknout se špatnou rolí. Role se nyní správně mění i bez znovunačtení stránky.
+
+## [4.9.2] — 2026-05-31
+
+Rekapitulace DPH se nově automaticky seedne z importovaného dokladu napříč všemi zdroji a oprava ISDOC exportu/importu dle oficiálního standardu 6.0.2 (typy dokladů a nedaňové doklady).
+
+### Added
+
+- **Automatická rekapitulace DPH z importovaného dokladu (§ 73 ZDPH).** Při importu přijaté faktury se rozpad DPH po sazbách nově převezme přímo z dokladu dodavatele a zapeče do uložené rekapitulace — sjednoceně ze všech zdrojů: ISDOC (`TaxTotal`), Pohoda (`invoiceSummary`), iDoklad (řádkové `Prices`) i AI extrakce z PDF. Nárok na odpočet tak sedí na částku daně uvedenou na dokladu. Drobné rozdíly se zapečou dle dokladu, větší se jen ohlásí jako varování (Fakturoid rozpad neposkytuje, proto se neseeduje).
+
+### Fixed
+
+- **ISDOC export — špatné typy dokladů.** `DocumentType` neodpovídal číselníku ISDOC 6.0.2: zálohová faktura se exportovala jako `2` (správně `4` — nedaňový zálohový list) a dobropis jako `5` (správně `2` — opravný daňový doklad). Účetní software tím dostával chybně zařazené doklady. Import čte typy reverzně shodně.
+- **ISDOC export — nedaňový doklad měl daňové řádky (pravidlo 4.1.5).** Zálohová faktura je nedaňový doklad (`VATApplicable=false`); nově se `VATApplicable=false` propisuje i do každé řádkové položky (`ClassifiedTaxCategory`), jak vyžaduje standard.
+- **ISDOC import — DPH z nedaňového dokladu.** Doklad či položka označené `VATApplicable=false` (neplátce DPH, nedaňový zálohový list) se nově importují s nulovou sazbou a prázdnou rekapitulací, takže se z nedaňového dokladu neeviduje DPH k odpočtu.
+
+## [4.9.1] — 2026-05-31
+
+Kompletní oprava importu z iDokladu po auditu celého mapování proti oficiálnímu iDoklad v3 API (Solitea SDK) — částky, přílohy, měny, země, kurzy i čísla dokladů. Řeší [#80](https://github.com/radekhulan/myinvoice/issues/80).
+
+### Fixed
+
+- **Importované faktury měly nulové částky (#80).** iDoklad v3 nevrací jednotkovou cenu položky v poli `UnitPrice`, ale vnořeně v `Prices` (autoritativní netto `Prices.TotalWithoutVat`); navíc cena může být včetně DPH dle `PriceType`. Import četl neexistující pole, takže **všechny** vydané i přijaté faktury (i dobropisy) skončily s částkou 0 Kč. Nově se čte správné netto a převádí dle režimu ceny.
+- **U přijatých faktur chyběly PDF přílohy.** Používal se neexistující endpoint (`/ReceivedInvoices/{id}/Attachments`) vracející 404. Opraveno na `/v3/Attachments/{id}/ReceivedInvoice/…`, který vrací bajty přílohy přímo v odpovědi.
+- **Měna se ignorovala — vše se importovalo v CZK.** Seznamové endpointy vrací jen číselné `CurrencyId`, ne kód měny. Doplněn převod přes číselník měn iDokladu, takže se zachová reálná měna dokladu (EUR, USD, …).
+- **Země kontaktu se ignorovala — vše CZ.** Stejná příčina (`CountryId` místo kódu); to navíc rozbíjelo automatickou detekci přenesené daňové povinnosti (reverse charge) u zahraničních dodavatelů. Doplněn převod přes číselník zemí.
+- **Kurz cizí měny mohl být 100× špatně.** iDoklad drží kurz na `ExchangeRateAmount` jednotek (u měn jako HUF/JPY = 100); nově se přepočítává na jednu jednotku.
+- **Číslo přijaté faktury a jméno kontaktu.** U přijatých faktur se nově bere číslo dodavatele (`ReceivedDocumentNumber`) místo interního čísla iDokladu; opraveno i čtení křestního jména kontaktu (`Firstname`).
 
 ## [4.9.0] — 2026-05-31
 

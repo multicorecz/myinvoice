@@ -124,7 +124,9 @@
     "log": "Log", "cron_jobs": "Plánované úlohy", "exports": "Export vystavených", "imports": "Importy", "imports_issued": "Import vystavených", "imports_purchase": "Import přijatých", "ai_import": "AI import", "integrations": "Externí integrace", "crm": "CRM", "reports_dph": "DPH přiznání", "reports_kh": "Kontrolní hlášení", "reports_dph_book": "Kniha DPH", "reports_shv": "Souhrnné hlášení", "reports_income_tax": "Daň z příjmů", "reports_submissions": "Archiv podání", "reports_monthly_export": "Měsíční export", "tax_optimizer": "Daňový optimalizátor", "email_templates": "Email šablony", "approvals": "Schvalování", "updates": "Aktualizace", "api_tokens": "API tokeny", "recurring": "Pravidelné fakturace", "help": "Nápověda", "logout": "Odhlásit",
     "section_sales": "Prodej", "section_purchase": "Nákup", "section_finance": "Finance", "section_clients": "Klienti",
     "section_documents": "Dokumenty", "documents": "Dokumenty",
-    "purchase_invoices": "Přijaté faktury", "purchase_export": "Export přijatých", "vendors": "Dodavatelé"
+    "purchase_invoices": "Přijaté faktury", "purchase_export": "Export přijatých", "vendors": "Dodavatelé",
+    "support_dev": "Podpořte rozvoj",
+    "quick_new": "Vytvořit", "quick_invoice": "Vydaná faktura", "quick_proforma": "Zálohová faktura", "quick_recurring": "Pravidelná fakturace", "quick_client": "Klient", "quick_vendor": "Dodavatel", "quick_purchase": "Přijatá faktura"
   },
   "purchase_invoice": {
     "title": "Přijaté faktury",
@@ -694,6 +696,7 @@
     "days_ago": "před {n} dny"
   },
   "common": {
+    "view_all": "Zobrazit vše",
     "year": "Rok", "month": "Měsíc",
     "loading": "Načítám…", "save": "Uložit", "cancel": "Zrušit", "add": "Přidat",
     "delete": "Smazat", "edit": "Upravit", "back": "← Zpět", "yes": "Ano", "no": "Ne",
@@ -1018,6 +1021,10 @@
     "reverse_charge": "Reverse charge",
     "prices_include_vat": "Ceny zadávám včetně DPH",
     "prices_include_vat_hint": "Ceny položek jsou s DPH (brutto); DPH se počítá shora koeficientem, takže celek sedí na haléř.",
+    "income_tax_exempt": "Osvobozeno od daně z příjmů",
+    "income_tax_exempt_hint": "Nezahrne se do základu daně z příjmů. DPH, kontrolní hlášení i tržby zůstávají beze změny.",
+    "income_tax_exempt_reason_placeholder": "Důvod osvobození (volitelné) — např. prodej vozidla § 4 odst. 1 písm. c, přefakturace nákladů",
+    "income_tax_exempt_badge": "Osvobozeno od daně z příjmů",
     "advance_paid": "Odečet zálohy",
     "note_above": "Poznámka nad položkami",
     "note_below": "Poznámka pod položkami",
@@ -2173,6 +2180,7 @@
       "csv_type": "Typ poplatníka",
       "csv_vat": "Plátce DPH",
       "revenue_orientacni": "Tržby (orientačně)",
+      "exempt_revenue_orientacni": "z toho osvobozeno od daně z příjmů",
       "revenue_hint": "Z vydaných faktur (CZK) za daný rok",
       "costs_orientacni": "Náklady (orientačně)",
       "costs_hint": "Z přijatých faktur (CZK)",

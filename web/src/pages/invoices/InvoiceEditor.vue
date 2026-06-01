@@ -37,6 +37,13 @@ const submitting = ref(false)
 const loadedRate = ref<{ rate: number; date: string; currency: string } | null>(null)
 const error = ref('')
 const isForce = computed(() => route.query.force === '1')
+
+// Předvolba typu dokladu z URL (`/invoices/new?type=proforma`). Whitelist — nesmí
+// projít nic jiného než povolené typy, jinak fallback na běžnou vydanou fakturu.
+const queryDocType = computed<'proforma' | 'credit_note' | null>(() => {
+  const q = route.query.type
+  return q === 'proforma' || q === 'credit_note' ? q : null
+})
 const editedStatus = ref<string>('draft')
 const editedVarsymbol = ref<string | null>(null)
 // Náhled čísla, které dostane faktura při Vystavení (pokud user nezadá ruční override).
@@ -108,6 +115,14 @@ function defaultItemUnit(): string {
 // Aktivní dodavatel — pokud není plátce DPH, fakturuje bez DPH (žádné DPH UI ani v PDF).
 const supplierIsVatPayer = computed(() => supplierStore.currentSupplier?.is_vat_payer ?? true)
 
+// „Osvobozeno od daně z příjmů" má smysl jen pro OSVČ (FO): osvobození dle § 4 ZDP
+// platí výhradně pro fyzické osoby, u s.r.o. (PO) žádný § 4 není a prodej majetku je
+// vždy zdanitelný výnos. U PO proto checkbox skryjeme. Ponecháme ho ale, pokud už je
+// příznak zaškrtnutý (legacy/import), aby šel zrušit.
+const showIncomeTaxExemptUI = computed(
+  () => supplierStore.currentSupplier?.taxpayer_type === 'fo' || form.value.income_tax_exempt,
+)
+
 // RC zobrazit jen když:
 //   - dodavatel je plátce DPH (neplátce nemůže RC vystavit) A
 //   - klient není vybraný NEBO má RC povolenou v profilu
@@ -130,6 +145,8 @@ const form = ref<{
   currency: string
   reverse_charge: boolean
   prices_include_vat: boolean
+  income_tax_exempt: boolean
+  income_tax_exempt_reason: string
   language: 'cs' | 'en'
   note_above_items: string
   note_below_items: string
@@ -154,6 +171,8 @@ const form = ref<{
   currency: 'CZK',
   reverse_charge: false,
   prices_include_vat: false,
+  income_tax_exempt: false,
+  income_tax_exempt_reason: '',
   language: 'cs',
   note_above_items: '',
   note_below_items: '',
@@ -300,6 +319,15 @@ watch(() => form.value.issue_date, (newIssue) => {
   }
 })
 
+// Přepnutí „Vydaná faktura" (/invoices/new) ⇄ „Zálohová faktura" (?type=proforma) z menu je
+// stejná route → komponenta se recykluje, onMounted už neproběhne. Bez tohoto watcheru by typ
+// zůstal z prvního otevření. Jen v režimu nového dokladu (edit netknutý). Promítne se i do
+// titulku, čísla dokladu (loadVarsymbolPreview) a skrytí DUZP u proformy.
+watch(() => route.query.type, () => {
+  if (isEdit.value) return
+  form.value.invoice_type = queryDocType.value ?? 'invoice'
+})
+
 // Při přepnutí typu na credit_note převrať množství všech existujících položek na záporná.
 watch(() => form.value.invoice_type, (newType, oldType) => {
   if (newType === 'credit_note' && oldType !== 'credit_note') {
@@ -355,6 +383,8 @@ onMounted(async () => {
       currency: inv.currency,
       reverse_charge: inv.reverse_charge,
       prices_include_vat: (inv as { prices_include_vat?: boolean }).prices_include_vat ?? false,
+      income_tax_exempt: (inv as { income_tax_exempt?: boolean }).income_tax_exempt ?? false,
+      income_tax_exempt_reason: (inv as { income_tax_exempt_reason?: string | null }).income_tax_exempt_reason ?? '',
       language: inv.language,
       note_above_items: inv.note_above_items ?? '',
       note_below_items: inv.note_below_items ?? '',
@@ -384,6 +414,8 @@ onMounted(async () => {
     if (editedStatus.value === 'draft') await loadVarsymbolPreview()
   } else {
     // New invoice — pre-select from query
+    // Typ dokladu z URL (?type=proforma → zálohová faktura), jinak zůstává 'invoice'.
+    if (queryDocType.value) form.value.invoice_type = queryDocType.value
     // Výchozí režim cen z nastavení dodavatele (0 = bez DPH; 1 = ceny s DPH).
     form.value.prices_include_vat = supplierStore.currentSupplier?.default_prices_include_vat ?? false
     if (route.query.client_id) {
@@ -973,6 +1005,8 @@ async function submit() {
       currency_id: form.value.currency_id,
       reverse_charge: form.value.reverse_charge,
       prices_include_vat: form.value.prices_include_vat,
+      income_tax_exempt: form.value.income_tax_exempt,
+      income_tax_exempt_reason: form.value.income_tax_exempt ? (form.value.income_tax_exempt_reason || null) : null,
       language: form.value.language,
       note_above_items: form.value.note_above_items || null,
       note_below_items: form.value.note_below_items || null,
@@ -1230,6 +1264,22 @@ async function deleteDraft() {
                 <span>{{ t('invoice.prices_include_vat') }}</span>
               </label>
               <p class="text-xs text-neutral-500 mt-1 ml-6">{{ t('invoice.prices_include_vat_hint') }}</p>
+            </div>
+            <div v-if="showIncomeTaxExemptUI">
+              <label class="flex items-center gap-2 text-sm text-neutral-700">
+                <input v-model="form.income_tax_exempt" type="checkbox" class="rounded border-neutral-300 text-primary-600" />
+                <span>{{ t('invoice.income_tax_exempt') }}</span>
+              </label>
+              <p class="text-xs text-neutral-500 mt-1 ml-6">{{ t('invoice.income_tax_exempt_hint') }}</p>
+              <div v-if="form.income_tax_exempt" class="ml-6 mt-2">
+                <input
+                  v-model="form.income_tax_exempt_reason"
+                  type="text"
+                  maxlength="190"
+                  :placeholder="t('invoice.income_tax_exempt_reason_placeholder')"
+                  class="w-full h-9 px-3 border border-neutral-300 rounded-md bg-surface text-sm"
+                />
+              </div>
             </div>
           </div>
         </div>
