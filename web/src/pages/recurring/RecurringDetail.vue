@@ -283,6 +283,7 @@ async function removeAction() {
             <div class="flex justify-between"><dt class="text-neutral-500">{{ t('payment_method.label') }}</dt><dd>{{ t('payment_method.' + tpl.payment_method) }}</dd></div>
             <div class="flex justify-between"><dt class="text-neutral-500">{{ t('recurring.payment_due_days') }}</dt><dd>{{ tpl.payment_due_days }}</dd></div>
             <div v-if="tpl.discount_percent > 0" class="flex justify-between"><dt class="text-neutral-500">{{ t('invoice.discount.label') }}</dt><dd>{{ tpl.discount_percent }} %</dd></div>
+            <div class="flex justify-between"><dt class="text-neutral-500">{{ t('recurring.revenue_category') }}</dt><dd>{{ tpl.revenue_category_id ? (tpl.revenue_category_label ?? `#${tpl.revenue_category_id}`) : t('recurring.revenue_category_fallback') }}</dd></div>
             <div class="flex justify-between"><dt class="text-neutral-500">{{ t('recurring.tax_date_mode') }}</dt><dd>{{ t('recurring.tax_date_mode_' + (tpl.tax_date_mode ?? 'same_as_issue')) }}</dd></div>
           </dl>
         </div>
@@ -303,6 +304,12 @@ async function removeAction() {
             <div class="flex justify-between"><dt class="text-neutral-500">{{ t('recurring.increment_month') }}</dt><dd>{{ tpl.increment_month_in_descriptions ? '✓' : '—' }}</dd></div>
           </dl>
         </div>
+      </div>
+
+      <!-- Poznámka nad položkami -->
+      <div v-if="tpl.note_above_items" class="bg-surface border border-neutral-200 rounded-lg p-5 shadow-sm">
+        <h3 class="text-sm font-semibold uppercase tracking-wide text-neutral-500 mb-2">{{ t('invoice.note_above') }}</h3>
+        <p class="text-sm text-neutral-700 whitespace-pre-wrap">{{ tpl.note_above_items }}</p>
       </div>
 
       <!-- Položky šablony -->
@@ -350,6 +357,12 @@ async function removeAction() {
             </div>
           </dl>
         </div>
+      </div>
+
+      <!-- Poznámka pod položkami -->
+      <div v-if="tpl.note_below_items" class="bg-surface border border-neutral-200 rounded-lg p-5 shadow-sm">
+        <h3 class="text-sm font-semibold uppercase tracking-wide text-neutral-500 mb-2">{{ t('invoice.note_below') }}</h3>
+        <p class="text-sm text-neutral-700 whitespace-pre-wrap">{{ tpl.note_below_items }}</p>
       </div>
 
       <!-- Vygenerované faktury -->

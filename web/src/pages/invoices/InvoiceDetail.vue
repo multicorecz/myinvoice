@@ -4,6 +4,13 @@ import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter, RouterLink } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { invoicesApi, type Invoice, type WorkReport, type ApprovalStatus, type InvoiceAttachment, type AdvanceCandidate } from '@/api/invoices'
+import {
+  settingsApi,
+  type PdfSignatureDocumentEntityType,
+  type PdfSignatureDocumentSelection,
+  type PdfSignatureDocumentSelectionSource,
+  type SigningProfile,
+} from '@/api/settings'
 import { apiErrorMessage } from '@/api/errors'
 import { formatMoney, formatDate, formatPercent, statusLabel, typeLabel, statusBadgeClass } from '@/composables/useFormat'
 import { useAuthStore } from '@/stores/auth'
@@ -54,6 +61,11 @@ const cancelReason = ref('')
 const sendOpen = ref(false)
 const sendTo = ref('')
 const sendNote = ref('')
+// #86 — vyřešení příjemci z backendu (provenance chips + editovatelné cc/bcc)
+const sendCcText = ref('')
+const sendBccText = ref('')
+const sendCcBccVisible = ref(false)
+const sendResolved = ref<Array<{ email: string; recipient: 'to' | 'cc' | 'bcc'; source: 'contact' | 'project' | 'main_email'; usage: string | null; label: string | null }>>([])
 
 // Reminder modal state
 const reminderOpen = ref(false)
@@ -72,18 +84,50 @@ const attachmentsBusy = ref(false)
 const attachmentsDragOver = ref(false)
 const attachmentInput = ref<HTMLInputElement | null>(null)
 const workReport = ref<WorkReport | null>(null)
+const signatureSelections = ref<Partial<Record<PdfSignatureDocumentEntityType, PdfSignatureDocumentSelection>>>({})
+const signingProfiles = ref<SigningProfile[]>([])
+const signatureSelectionLoading = ref(false)
+const signatureSelectionSaving = ref<PdfSignatureDocumentEntityType | null>(null)
 const wrHasDates = computed(() => !!workReport.value?.items.some(i => !!i.work_date))
+const hasPdfSigningProfiles = computed(() => signingProfiles.value.some(
+  profile => profile.is_active && profile.allowed_usages.includes('pdf'),
+))
+// Kartu „Elektronický podpis dokumentu" ukážeme jen když je podepisování pro
+// tohoto dodavatele skutečně nastavené (existuje aktivní profil s PDF využitím).
+// Jinak by ji u každé faktury viděl i uživatel, který nikdy nepodepisuje (balast).
+const canManageSignatureSelection = computed(() => auth.canWrite && hasPdfSigningProfiles.value)
+const adminSigningProfiles = computed(() => signingProfiles.value.filter(
+  profile => profile.owner_user_id === null && profile.is_active && profile.allowed_usages.includes('pdf'),
+))
+// Pravdivá indikace pro badge „Podepsáno": backend říká, zda se TENTO doklad
+// reálně podepíše (zapnutý výstup + resolvovatelný profil s certifikátem),
+// ne jen že existuje nějaký profil.
+const invoiceWillBeSigned = computed(() => signatureSelection('invoice')?.effective_will_sign === true)
+const signatureSelectionRows = computed(() => {
+  const rows: Array<{ entityType: PdfSignatureDocumentEntityType; label: string }> = [
+    { entityType: 'invoice', label: t('invoice.signing.output_invoice') as string },
+  ]
+  if (workReport.value) rows.push({ entityType: 'work_report', label: t('invoice.signing.output_work_report') as string })
+  return rows
+})
 
 async function load() {
   loading.value = true
   invoice.value = await invoicesApi.get(Number(route.params.id))
   loading.value = false
+  if (auth.canWrite) {
+    await loadSignatureProfiles()
+    if (hasPdfSigningProfiles.value) loadSignatureSelection('invoice')
+  }
   // Activity log + work report + PDF historie (parallel, ne blokuje UI)
   invoicesApi.activity(Number(route.params.id))
     .then(a => { activity.value = a })
     .catch(() => {})
   invoicesApi.getWorkReport(Number(route.params.id))
-    .then(wr => { workReport.value = wr })
+    .then(wr => {
+      workReport.value = wr
+      if (wr && canManageSignatureSelection.value) loadSignatureSelection('work_report')
+    })
     .catch(() => {})
   invoicesApi.listPdfs(Number(route.params.id))
     .then(items => { pdfHistory.value = items })
@@ -91,6 +135,90 @@ async function load() {
   invoicesApi.listAttachments(Number(route.params.id))
     .then(items => { attachments.value = items })
     .catch(() => {})
+}
+
+async function loadSignatureProfiles() {
+  try {
+    signingProfiles.value = await settingsApi.listSigningProfiles()
+  } catch {
+    signingProfiles.value = []
+  }
+}
+
+async function loadSignatureSelection(entityType: PdfSignatureDocumentEntityType) {
+  if (!invoice.value) return
+  signatureSelectionLoading.value = true
+  try {
+    const selection = await settingsApi.getPdfSignatureDocumentSelection(entityType, invoice.value.id)
+    signatureSelections.value = { ...signatureSelections.value, [entityType]: selection }
+  } catch {
+    // UI zůstane bez řádku nastavení, pokud endpoint není pro roli dostupný.
+  } finally {
+    signatureSelectionLoading.value = false
+  }
+}
+
+function signatureSelection(entityType: PdfSignatureDocumentEntityType): PdfSignatureDocumentSelection | null {
+  return signatureSelections.value[entityType] || null
+}
+
+function setSignatureSelectionSource(entityType: PdfSignatureDocumentEntityType, source: PdfSignatureDocumentSelectionSource) {
+  const current = signatureSelection(entityType)
+  if (!current) return
+  signatureSelections.value = {
+    ...signatureSelections.value,
+    [entityType]: {
+      ...current,
+      selection_source: source,
+      admin_profile_id: source === 'admin_profile_settings' ? current.admin_profile_id : null,
+    },
+  }
+}
+
+function setSignatureAdminProfile(entityType: PdfSignatureDocumentEntityType, profileId: number | null) {
+  const current = signatureSelection(entityType)
+  if (!current) return
+  signatureSelections.value = {
+    ...signatureSelections.value,
+    [entityType]: {
+      ...current,
+      admin_profile_id: profileId,
+    },
+  }
+}
+
+function signatureSelectionSourceLabel(source: string): string {
+  if (source === 'inherit') return t('invoice.signing.source_inherit') as string
+  return t(`settings.signing_output_source_${source}`) as string
+}
+
+function signatureProfileName(profileId: number | null): string {
+  if (profileId === null) return t('settings.signing_output_profile_none') as string
+  return signingProfiles.value.find(profile => profile.id === profileId)?.name || `#${profileId}`
+}
+
+async function saveSignatureSelection(entityType: PdfSignatureDocumentEntityType) {
+  if (!invoice.value) return
+  const selection = signatureSelection(entityType)
+  if (!selection) return
+  signatureSelectionSaving.value = entityType
+  try {
+    const saved = await settingsApi.updatePdfSignatureDocumentSelection(entityType, invoice.value.id, {
+      selection_source: selection.selection_source,
+      admin_profile_id: selection.selection_source === 'admin_profile_settings' && isAdmin.value
+        ? selection.admin_profile_id
+        : null,
+    })
+    signatureSelections.value = { ...signatureSelections.value, [entityType]: saved }
+    toast.success(t('invoice.signing.saved'))
+    if (entityType === 'invoice') {
+      invoicesApi.listPdfs(invoice.value.id).then(items => { pdfHistory.value = items }).catch(() => {})
+    }
+  } catch (e: any) {
+    toast.error(e?.response?.data?.error?.message || t('common.error'))
+  } finally {
+    signatureSelectionSaving.value = null
+  }
 }
 
 function attachmentsAvailable(inv: Invoice | null): boolean {
@@ -144,6 +272,8 @@ function pdfReasonLabel(reason: string): string {
     'invalidate_issue': 'invoice.pdf_history.reason.issue',
     'invalidate_allocate': 'invoice.pdf_history.reason.allocate',
     'invalidate_workreport': 'invoice.pdf_history.reason.workreport',
+    'invalidate_signature_selection': 'invoice.pdf_history.reason.signature_selection',
+    'invalidate_signature_config': 'invoice.pdf_history.reason.signature_config',
     'approval_request': 'invoice.pdf_history.reason.approval_request',
     'approval_reminder': 'invoice.pdf_history.reason.approval_reminder',
     'invalidate_currency': 'invoice.pdf_history.reason.currency',
@@ -578,17 +708,40 @@ const canSendTestReminder = computed(() =>
   && Number(invoice.value.amount_to_pay ?? 0) > 0
 )
 
-function openSendModal() {
+async function openSendModal() {
   if (!invoice.value) return
-  // Pre-fill recipients: client_main_email + project billing emails (de-duplikováno).
-  // Stejná logika jako backend SendEmailAction::resolveRecipients — ať uživatel
-  // v modalu vidí přesně to, co se odešle (a může to libovolně upravit).
-  const main = invoice.value.client_main_email || ''
-  const billing = (invoice.value.project_billing_emails || []).map(b => b.email)
-  const all = [main, ...billing].filter(Boolean)
-  sendTo.value = Array.from(new Set(all)).join(', ')
+  // Příjemce vyřeší backend (RecipientResolver, #86) — kontakty klienta dle účelu
+  // `documents` + e-maily zakázky; modal zobrazí provenanci a nechá vše upravit.
+  // Fallback (chyba API): dosavadní lokální složení main + billing emails.
   sendNote.value = ''
+  sendResolved.value = []
+  sendCcText.value = ''
+  sendBccText.value = ''
+  sendCcBccVisible.value = false
+  try {
+    const r = await invoicesApi.recipients(invoice.value.id, 'documents')
+    sendTo.value = r.to.join(', ')
+    sendCcText.value = r.cc.join(', ')
+    sendBccText.value = r.bcc.join(', ')
+    sendCcBccVisible.value = r.cc.length > 0 || r.bcc.length > 0
+    sendResolved.value = r.resolved
+  } catch {
+    const main = invoice.value.client_main_email || ''
+    const billing = (invoice.value.project_billing_emails || []).map(b => b.email)
+    sendTo.value = Array.from(new Set([main, ...billing].filter(Boolean))).join(', ')
+  }
   sendOpen.value = true
+}
+
+/** Lidský popis zdroje příjemce pro chip v modalu (#86). */
+function recipientSourceLabel(rr: { source: string; usage: string | null; label: string | null }): string {
+  if (rr.source === 'contact') {
+    const usage = rr.usage ? t(`client.email_contacts.usage.${rr.usage}`) : ''
+    return rr.label ? `${t('invoice.send_source_contact')}: ${rr.label}` : `${t('invoice.send_source_contact')}: ${usage}`
+  }
+  if (rr.source === 'project') return t('invoice.send_source_project')
+  if (rr.source === 'supplier') return t('invoice.send_source_supplier')
+  return t('invoice.send_source_main')
 }
 
 async function send() {
@@ -601,8 +754,12 @@ async function send() {
   busy.value = 'send'
   try {
     const note = sendNote.value.trim()
+    const cc = sendCcText.value.split(',').map(e => e.trim()).filter(Boolean)
+    const bcc = sendBccText.value.split(',').map(e => e.trim()).filter(Boolean)
     const r = await invoicesApi.send(invoice.value.id, {
       to: recipients,
+      ...(cc.length ? { cc } : {}),
+      ...(bcc.length ? { bcc } : {}),
       ...(note ? { note } : {}),
     })
     sendOpen.value = false
@@ -671,8 +828,16 @@ const daysOverdue = computed(() => {
   return Math.max(0, Math.floor((today.getTime() - due.getTime()) / 86_400_000))
 })
 
-function openReminderModal() {
+// #86 — příjemci upomínky z resolveru (kontakty s účelem `reminders`, fallback documents/main).
+const reminderResolved = ref<Array<{ email: string; recipient: 'to' | 'cc' | 'bcc'; source: 'contact' | 'project' | 'main_email'; usage: string | null; label: string | null }>>([])
+
+async function openReminderModal() {
   if (!invoice.value) return
+  reminderResolved.value = []
+  try {
+    const r = await invoicesApi.recipients(invoice.value.id, 'reminders')
+    reminderResolved.value = r.resolved
+  } catch { /* fallback na legacy zobrazení níže */ }
   reminderOpen.value = true
 }
 
@@ -887,9 +1052,15 @@ async function updateApprovalStatus() {
           {{ busy === 'clone' ? '…' : t('invoice.clone') }}
         </button>
         <button v-if="!isDraft || invoice.items.length > 0" @click="downloadPdf"
+          :title="invoiceWillBeSigned ? (t('invoice.download_pdf_tooltip_signed') as string) : undefined"
           class="cursor-pointer px-3 h-9 text-sm border border-primary-500/40 rounded-md text-primary-700 hover:bg-primary-50 inline-flex items-center gap-1.5">
           <svg class="w-4 h-4 text-primary-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5.586a1 1 0 0 1 .707.293l5.414 5.414a1 1 0 0 1 .293.707V19a2 2 0 0 1-2 2z"/></svg>
-          {{ t('invoice.pdf') }}
+          {{ t('invoice.download_pdf') }}
+          <span v-if="invoiceWillBeSigned" :title="(t('invoice.download_pdf_tooltip_signed') as string)"
+            class="ml-1 inline-flex items-center gap-0.5 rounded-full bg-success-50 px-1.5 py-0.5 text-[10px] font-medium text-success-700">
+            <svg class="w-2.5 h-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
+            {{ t('invoice.signed_badge') }}
+          </span>
         </button>
       </div>
     </div>
@@ -916,7 +1087,8 @@ async function updateApprovalStatus() {
       <div v-if="invoice.client_ic || invoice.client_dic" class="text-xs font-mono text-neutral-500 text-right whitespace-nowrap">
         <span v-if="invoice.client_ic">{{ t('common.ic') }} {{ invoice.client_ic }}</span>
         <span v-if="invoice.client_ic && invoice.client_dic">, </span>
-        <span v-if="invoice.client_dic">{{ t('common.dic') }} {{ invoice.client_dic }}</span>
+        <!-- SK DIČ s prefixem = IČ DPH (#120) -->
+        <span v-if="invoice.client_dic">{{ (invoice.client_dic || '').toUpperCase().startsWith('SK') ? t('common.ic_dph') : t('common.dic') }} {{ invoice.client_dic }}</span>
       </div>
     </div>
 
@@ -1001,6 +1173,32 @@ async function updateApprovalStatus() {
         <h3 class="text-lg font-semibold mb-3">{{ t('invoice.modals.send_title') }}</h3>
         <label class="block text-sm font-medium text-neutral-700 mb-1">{{ t('invoice.modals.send_recipients') }}</label>
         <input v-model="sendTo" type="text" class="w-full h-10 px-3 border border-neutral-300 rounded-md mb-2 text-sm" />
+
+        <!-- CC/BCC — editovatelné; zobrazí se když je resolver naplnil, jinak na klik -->
+        <template v-if="sendCcBccVisible">
+          <label class="block text-xs font-medium text-neutral-600 mb-1">{{ t('invoice.modals.send_cc_label') }}</label>
+          <input v-model="sendCcText" type="text" class="w-full h-9 px-3 border border-neutral-300 rounded-md mb-2 text-sm" />
+          <label class="block text-xs font-medium text-neutral-600 mb-1">{{ t('invoice.modals.send_bcc_label') }}</label>
+          <input v-model="sendBccText" type="text" class="w-full h-9 px-3 border border-neutral-300 rounded-md mb-2 text-sm" />
+        </template>
+        <button v-else type="button" @click="sendCcBccVisible = true"
+          class="cursor-pointer text-xs text-primary-700 hover:text-primary-800 mb-2">+ CC / BCC</button>
+
+        <!-- Provenance (#86) — vysvětluje, ODKUD se každá adresa v polích výše vzala
+             (nejsou to další příjemci; duplicity už jsou sloučené) -->
+        <div v-if="sendResolved.length" class="rounded-md bg-neutral-50 border border-neutral-200 px-2.5 py-2 mb-2">
+          <div class="text-[11px] text-neutral-500 mb-1">{{ t('invoice.modals.send_sources_label') }}</div>
+          <div class="flex flex-wrap gap-1.5">
+            <span v-for="rr in sendResolved" :key="rr.email"
+              class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-surface border border-neutral-200 text-xs"
+              :title="rr.email">
+              <span class="font-mono">{{ rr.email }}</span>
+              <span class="text-neutral-400">·</span>
+              <span class="text-neutral-500">{{ recipientSourceLabel(rr) }}</span>
+              <span v-if="rr.recipient !== 'to'" class="uppercase text-[10px] font-semibold text-primary-700">{{ rr.recipient }}</span>
+            </span>
+          </div>
+        </div>
         <p class="text-xs text-neutral-500 mb-4">{{ t('invoice.modals.send_default_hint') }}</p>
         <label class="block text-sm font-medium text-neutral-700 mb-1">{{ t('invoice.modals.send_note_label') }}</label>
         <textarea v-model="sendNote" rows="4" maxlength="5000"
@@ -1023,7 +1221,14 @@ async function updateApprovalStatus() {
         <h3 class="text-lg font-semibold mb-1">{{ t('invoice.modals.reminder_title') }}</h3>
         <p class="text-sm text-warning-600 font-medium mb-3">{{ t('invoice.modals.reminder_overdue', { days: daysOverdue }) }}</p>
         <p class="text-sm text-neutral-600 mb-3">{{ t('invoice.modals.reminder_body') }}</p>
-        <div v-if="invoice && (invoice.client_main_email || invoice.project_billing_emails?.length)" class="bg-neutral-50 border border-neutral-200 rounded-md px-3 py-2 mb-4 text-xs">
+        <!-- #86: příjemci z resolveru s provenancí; fallback legacy zobrazení při chybě API -->
+        <div v-if="reminderResolved.length" class="bg-neutral-50 border border-neutral-200 rounded-md px-3 py-2 mb-4 text-xs">
+          <div class="text-neutral-500 mb-0.5">{{ t('invoice.modals.reminder_recipients') }}</div>
+          <div v-for="rr in reminderResolved" :key="rr.email" class="font-mono">
+            ✉ {{ rr.email }}<span class="text-neutral-400 font-sans"> ({{ recipientSourceLabel(rr) }}<template v-if="rr.recipient !== 'to'">, {{ rr.recipient.toUpperCase() }}</template>)</span>
+          </div>
+        </div>
+        <div v-else-if="invoice && (invoice.client_main_email || invoice.project_billing_emails?.length)" class="bg-neutral-50 border border-neutral-200 rounded-md px-3 py-2 mb-4 text-xs">
           <div class="text-neutral-500 mb-0.5">{{ t('invoice.modals.reminder_recipients') }}</div>
           <div v-if="invoice.client_main_email" class="font-mono">✉ {{ invoice.client_main_email }}</div>
           <div v-for="b in (invoice.project_billing_emails || []).filter(b => b.email !== invoice!.client_main_email)" :key="b.email" class="font-mono">
@@ -1165,6 +1370,12 @@ async function updateApprovalStatus() {
           {{ t('payment_method.hint') }}
         </div>
       </div>
+    </div>
+
+    <!-- Poznámka nad položkami -->
+    <div v-if="invoice.note_above_items" class="bg-surface border border-neutral-200 rounded-lg p-5 shadow-sm">
+      <h3 class="text-sm font-semibold uppercase tracking-wide text-neutral-500 mb-2">{{ t('invoice.note') }}</h3>
+      <p class="text-sm text-neutral-700 whitespace-pre-wrap">{{ invoice.note_above_items }}</p>
     </div>
 
     <!-- Položky -->
@@ -1326,6 +1537,79 @@ async function updateApprovalStatus() {
         {{ invoice.revenue_category_label }}
         <span class="text-neutral-400">({{ invoice.revenue_category_code }})</span>
       </span>
+    </div>
+
+    <!-- Elektronický podpis dokumentu -->
+    <div v-if="canManageSignatureSelection" class="bg-surface border border-neutral-200 rounded-lg shadow-sm overflow-hidden">
+      <header class="px-5 py-3 border-b border-neutral-200">
+        <h3 class="text-sm font-semibold uppercase tracking-wide text-neutral-500">{{ t('invoice.signing.title') }}</h3>
+        <p class="text-xs text-neutral-500 mt-0.5">{{ t('invoice.signing.hint') }}</p>
+      </header>
+      <div v-if="signatureSelectionLoading && signatureSelectionRows.some(row => !signatureSelection(row.entityType))"
+        class="px-5 py-4 text-sm text-neutral-500">
+        {{ t('common.loading') }}
+      </div>
+      <div v-else class="overflow-x-auto">
+        <table class="w-full text-xs">
+          <thead class="bg-neutral-50 text-neutral-500 uppercase tracking-wide">
+            <tr>
+              <th class="px-5 py-2 text-left font-medium">{{ t('invoice.signing.output') }}</th>
+              <th class="px-3 py-2 text-left font-medium">{{ t('settings.signing_output_selection_source') }}</th>
+              <th class="px-3 py-2 text-left font-medium">{{ t('settings.signing_output_profile') }}</th>
+              <th class="px-3 py-2 text-left font-medium">{{ t('invoice.signing.effective') }}</th>
+              <th class="px-5 py-2 w-24"></th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-neutral-100">
+            <tr v-for="row in signatureSelectionRows" :key="row.entityType">
+              <td class="px-5 py-2 font-medium text-neutral-800">{{ row.label }}</td>
+              <td class="px-3 py-2">
+                <select
+                  :value="signatureSelection(row.entityType)?.selection_source || 'inherit'"
+                  @change="setSignatureSelectionSource(row.entityType, ($event.target as HTMLSelectElement).value as PdfSignatureDocumentSelectionSource)"
+                  class="h-8 w-48 px-2 border border-neutral-300 rounded-md text-xs">
+                  <option value="inherit">{{ t('invoice.signing.source_inherit') }}</option>
+                  <option value="logged_in_user">{{ t('settings.signing_output_source_logged_in_user') }}</option>
+                  <option value="admin_profile_settings">{{ t('settings.signing_output_source_admin_profile_settings') }}</option>
+                </select>
+              </td>
+              <td class="px-3 py-2">
+                <select
+                  v-if="isAdmin && signatureSelection(row.entityType)?.selection_source === 'admin_profile_settings'"
+                  :value="signatureSelection(row.entityType)?.admin_profile_id || ''"
+                  @change="setSignatureAdminProfile(row.entityType, ($event.target as HTMLSelectElement).value ? Number(($event.target as HTMLSelectElement).value) : null)"
+                  class="h-8 w-48 px-2 border border-neutral-300 rounded-md text-xs">
+                  <option value="">{{ t('invoice.signing.admin_profile_inherited') }}</option>
+                  <option v-for="profile in adminSigningProfiles" :key="profile.id" :value="profile.id">
+                    {{ profile.name }} ({{ profile.code }})
+                  </option>
+                </select>
+                <span v-else class="text-neutral-500">
+                  {{ signatureSelection(row.entityType)?.selection_source === 'admin_profile_settings'
+                    ? t('invoice.signing.admin_profile_inherited')
+                    : '—' }}
+                </span>
+              </td>
+              <td class="px-3 py-2 text-neutral-600">
+                <template v-if="signatureSelection(row.entityType)">
+                  {{ signatureSelectionSourceLabel(signatureSelection(row.entityType)!.effective_selection_source) }}
+                  <span v-if="signatureSelection(row.entityType)!.effective_selection_source === 'admin_profile_settings'"
+                    class="text-neutral-400">
+                    · {{ signatureProfileName(signatureSelection(row.entityType)!.effective_admin_profile_id) }}
+                  </span>
+                </template>
+              </td>
+              <td class="px-5 py-2 text-right">
+                <button @click="saveSignatureSelection(row.entityType)" type="button"
+                  :disabled="signatureSelectionSaving === row.entityType || !signatureSelection(row.entityType)"
+                  class="cursor-pointer text-primary-600 hover:text-primary-700 disabled:opacity-50">
+                  {{ signatureSelectionSaving === row.entityType ? t('common.loading') : t('common.save') }}
+                </button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
     </div>
 
 

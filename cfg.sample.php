@@ -111,9 +111,15 @@ return [
 
         // Při odeslání faktury klientovi přidá supplier.email (z Nastavení > Dodavatel)
         // do CC. Hlavní To = client_main_email + project_billing_emails (vždy).
+        //
+        // POZN.: Tohle je jen globální DEFAULT — per-supplier override (vč. volby
+        // CC vs. BCC vs. vypnuto) je v Nastavení > Dodavatel (supplier.self_copy,
+        // migrace 0102). Cfg flag platí, jen dokud supplier daný typ zprávy
+        // explicitně nepřenastaví.
         'cc_supplier_on_send'     => false,
         // Stejné CC pro upomínky (ruční i z cronu, vč. proforma_reminder).
         // Většinou nechcete sobě chodit kopie každé odeslané upomínky → default false.
+        // Per-supplier override: supplier.self_copy['reminders'].
         'cc_supplier_on_reminder' => false,
 
         // TLS validation
@@ -176,6 +182,25 @@ return [
         'sessions_dir' => __DIR__ . '/storage/sessions',  // jen pokud session.driver = 'db' (file fallback)
         'cache_dir'    => __DIR__ . '/storage/cache',     // file cache (ARES/VIES odpovědi, PDF mezikroky)
     ],
+    'pdf_signing' => [
+        // Platform-level switch pro podpisovou infrastrukturu. Konkrétní certifikáty
+        // a TSA se nastavují přes podpisové profily v administraci.
+        'enabled'        => true,
+        'default_backend'=> 'native',                  // první iterace: pouze native backend nad PdfSigner
+        'failure_policy' => 'fallback_unsigned',       // fallback_unsigned | fail_closed | skip_when_unconfigured
+        'enabled_outputs'=> [
+            'invoices'     => true,
+            'work_reports' => true,
+        ],
+    ],
+    'signing' => [
+        // Volitelný passphrase file pro podpisové profily s politikou passphrase_file.
+        // Soubor může být Docker secret (/run/secrets/...) nebo relativní cesta vůči data dir.
+        // Formát INI:
+        //   [profile_code]
+        //   passphrase=heslo
+        'passphrase_file' => '',
+    ],
     'qr' => [
         'czk_constant_symbol' => '0308',             // KS pro CZK platby (0308 = běžný platební styk)
     ],
@@ -234,6 +259,9 @@ return [
         'token_ttl_days'        => 30,               // za kolik dní token vyprší (přesměrovat „odeslat znovu" v UI)
         'reminder_after_days'   => 5,                // cron: kolik dní bez reakce → poslat upomínku
         'max_reminders'         => 3,                // max počet upomínek na 1 token, pak přestat
+        // BCC dodavateli pro audit — jen globální DEFAULT; per-supplier override
+        // (CC/BCC/vypnuto, společný pro žádost i upomínku) je v Nastavení > Dodavatel
+        // (supplier.self_copy['approvals'], migrace 0102).
         'cc_supplier_on_approval'          => true,  // BCC dodavateli u první žádosti o schválení (audit)
         'cc_supplier_on_approval_reminder' => true,  // BCC dodavateli u schvalovacích upomínek (audit)
     ],
@@ -252,6 +280,18 @@ return [
         ],
         'header' => 'X-Forwarded-For',               // hlavička se skutečnou klient IP (přepíše REMOTE_ADDR za trusted proxy)
     ],
+
+    // Parsery bankovních e-mailových avíz se registrují automaticky z kódu
+    // (baseline defaults v Config) — v cfg NIC nenastavuj, nové parsery se
+    // objeví s update aplikace. Override jen pro speciální případy: hodnota
+    // null/false slot vypne, class name vlastní služby (implementující
+    // BankEmailNoticeParserInterface) slot nahradí.
+    // 'bank_email' => [
+    //     'notice_parsers' => [
+    //         'csob' => null,                          // vypnutí vestavěného parseru
+    //         'mybank' => \My\Custom\BankParser::class, // vlastní parser
+    //     ],
+    // ],
 
     // Auto-import bankovních výpisů (GPC/ABO) z monitorovaného adresáře.
     // Manuální upload přes UI funguje vždy bez ohledu na tuto sekci.
@@ -285,7 +325,10 @@ return [
         'backup' => [
             'daily_retention_days'   => 30,          // drž denní mysqldump zálohy N dnů
             'monthly_retention_days' => 365,         // drž 1. v měsíci jako "monthly" zálohu N dnů
-            'output_dir'             => 'storage/backup',
+            'output_dir'             => __DIR__ . '/storage/backup', // absolutní cesta! (relativní by se ukotvila k rootu aplikace, ne k CWD cronu)
+            'password'               => '',          // volitelné heslo ZIP záloh (DB + PDF + Dokumenty), AES-256. Prázdné = bez šifrování.
+                                                     // Rozbalení: 7-Zip / WinRAR / `unzip -P` — Průzkumník Windows AES-256 neumí.
+                                                     // Šifruje se obsah souborů; názvy souborů uvnitř ZIPu zůstávají čitelné.
         ],
     ],
 ];

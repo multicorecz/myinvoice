@@ -22,11 +22,19 @@ namespace MyInvoice\Service\Tax;
 final class TaxConstants
 {
     /**
-     * @return array<string, mixed> konstanty pro daný rok
+     * Konstanty pro daný rok; neznámý rok spadne na nejbližší předchozí známý
+     * (budoucí roky tak dostanou poslední ověřené hodnoty, ne natvrdo zadrátovaný
+     * rok), rok před začátkem tabulky na nejstarší známý.
+     * @return array<string, mixed>
      */
     public static function forYear(int $year): array
     {
-        return self::TABLE[$year] ?? self::TABLE[2026];
+        if (isset(self::TABLE[$year])) {
+            return self::TABLE[$year];
+        }
+        $known = self::availableYears();
+        $below = array_filter($known, static fn (int $y): bool => $y < $year);
+        return self::TABLE[$below !== [] ? max($below) : min($known)];
     }
 
     public static function availableYears(): array
@@ -70,9 +78,12 @@ final class TaxConstants
             // Odpočty — stropy
             'mortgage_cap' => 150000,
             'pension_cap'  => 48000,
-            // DPH
+            // DPH — platí pro VŠECHNY plátce (nejen OSVČ)
             'vat_limit_low'  => 2000000,
             'vat_limit_high' => 2536500,
+            'vat_rate_standard' => 21.0,  // základní sazba § 47 ZDPH
+            'vat_rate_reduced'  => 12.0,  // snížená sazba (od 2024 jednotná 12 %)
+            'kh_item_threshold' => 10000, // limit KH: nad → A.4/B.2 jednotlivě, do → A.5/B.3 sumace
         ],
         2026 => [
             'year' => 2026,
@@ -101,6 +112,9 @@ final class TaxConstants
             'pension_cap'  => 48000,
             'vat_limit_low'  => 2000000,
             'vat_limit_high' => 2536500,
+            'vat_rate_standard' => 21.0,
+            'vat_rate_reduced'  => 12.0,
+            'kh_item_threshold' => 10000,
         ],
     ];
 }

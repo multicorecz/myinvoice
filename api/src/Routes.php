@@ -47,8 +47,11 @@ use MyInvoice\Action\Admin\ListActivityLogAction;
 use MyInvoice\Action\Admin\ListSentEmailsAction;
 use MyInvoice\Action\Admin\UserAdminAction;
 use MyInvoice\Action\Settings\EmailBrandingAction;
+use MyInvoice\Action\Settings\PdfSigningDiagnosticsAction;
 use MyInvoice\Action\Settings\SettingsAction;
-use MyInvoice\Action\Settings\SigningCertAction;
+use MyInvoice\Action\Settings\SignatureDocumentSelectionAction;
+use MyInvoice\Action\Settings\SigningProfilesAction;
+use MyInvoice\Action\Bank\BankEmailNoticeAction;
 use MyInvoice\Action\Bank\BankStatementAction;
 use MyInvoice\Action\Dashboard\SummaryAction;
 use MyInvoice\Action\Dashboard\PurchaseSummaryAction;
@@ -100,6 +103,7 @@ use MyInvoice\Action\Invoice\Attachment\ListAttachmentsAction;
 use MyInvoice\Action\Invoice\Attachment\UploadAttachmentAction;
 use MyInvoice\Action\Invoice\Attachment\DeleteAttachmentAction;
 use MyInvoice\Action\Invoice\Attachment\DownloadAttachmentAction;
+use MyInvoice\Action\Invoice\GetRecipientsAction;
 use MyInvoice\Action\Invoice\SendEmailAction;
 use MyInvoice\Action\Invoice\SendReminderAction;
 use MyInvoice\Action\Invoice\BulkSendRemindersAction;
@@ -263,6 +267,7 @@ final class Routes
         $app->post   ('/api/invoices/{id:[0-9]+}/attachments', UploadAttachmentAction::class);
         $app->get    ('/api/invoices/{id:[0-9]+}/attachments/{attId:[0-9]+}', DownloadAttachmentAction::class);
         $app->delete ('/api/invoices/{id:[0-9]+}/attachments/{attId:[0-9]+}', DeleteAttachmentAction::class);
+        $app->get    ('/api/invoices/{id:[0-9]+}/recipients', GetRecipientsAction::class);  // #86 vyřešení příjemců pro modal
         $app->post   ('/api/invoices/{id:[0-9]+}/send',      SendEmailAction::class);
         $app->post   ('/api/invoices/{id:[0-9]+}/send-test', SendTestEmailAction::class);
         $app->post   ('/api/invoices/{id:[0-9]+}/reminder',  SendReminderAction::class);
@@ -276,6 +281,9 @@ final class Routes
         $app->post   ('/api/invoices/bulk-reissue',          BulkReissueAction::class);
         $app->post   ('/api/invoices/bulk-reminder',         BulkSendRemindersAction::class);
         $app->post   ('/api/invoices/{id:[0-9]+}/clone',     CloneInvoiceAction::class);
+        $app->get    ('/api/documents/{entity_type:invoice|work_report}/{id:[0-9]+}/signature-selection', [SignatureDocumentSelectionAction::class, 'get']);
+        $app->put    ('/api/documents/{entity_type:invoice|work_report}/{id:[0-9]+}/signature-selection', [SignatureDocumentSelectionAction::class, 'put']);
+        $app->delete ('/api/documents/{entity_type:invoice|work_report}/{id:[0-9]+}/signature-selection', [SignatureDocumentSelectionAction::class, 'delete']);
 
         // Přijaté faktury (purchase invoices) — fáze 1 integrace forku.
         // Všechny chráněné AuthMiddleware + SupplierScopeMiddleware (skrz globální group).
@@ -448,14 +456,44 @@ final class Routes
         // Settings (M6) — aktuální supplier (z X-Supplier-Id)
         $app->get ('/api/settings/supplier',                [SettingsAction::class, 'getSupplier']);
         $app->put ('/api/settings/supplier',                [SettingsAction::class, 'updateSupplier']);
-        // Podpis PDF certifikátem (PAdES, migrace 0076)
-        $app->post   ('/api/settings/signing-cert',         [SigningCertAction::class, 'upload']);
-        $app->delete ('/api/settings/signing-cert',         [SigningCertAction::class, 'remove']);
-        $app->get    ('/api/settings/signing-cert',         [SigningCertAction::class, 'metadata']);
+        $app->get    ('/api/settings/pdf-signing/diagnostics', PdfSigningDiagnosticsAction::class);
+        $app->get    ('/api/settings/pdf-signing',          [SigningProfilesAction::class, 'pdfSettings']);
+        $app->post   ('/api/settings/pdf-signing/test',     [SigningProfilesAction::class, 'testPdfSigning']);
+        $app->put    ('/api/settings/pdf-signing/output-settings/{output_type:[a-z_]+}', [SigningProfilesAction::class, 'updatePdfOutputSetting']);
+        $app->get    ('/api/settings/pdf-signing/user-defaults', [SigningProfilesAction::class, 'userDefaults']);
+        $app->put    ('/api/settings/pdf-signing/user-defaults/{output_type:[a-z_]+}', [SigningProfilesAction::class, 'updateUserDefault']);
+        $app->get    ('/api/settings/signing',              [SigningProfilesAction::class, 'settings']);
+        $app->put    ('/api/settings/signing',              [SigningProfilesAction::class, 'updateSettings']);
+        $app->get    ('/api/settings/signing/profiles',              [SigningProfilesAction::class, 'listProfiles']);
+        $app->post   ('/api/settings/signing/profiles',              [SigningProfilesAction::class, 'createProfile']);
+        $app->get    ('/api/settings/signing/profiles/{id:[0-9]+}/credentials/certificate', [SigningProfilesAction::class, 'credentialCertificate']);
+        $app->post   ('/api/settings/signing/profiles/{id:[0-9]+}/credentials/certificate', [SigningProfilesAction::class, 'uploadCredentialCertificate']);
+        $app->put    ('/api/settings/signing/profiles/{id:[0-9]+}/credentials/certificate', [SigningProfilesAction::class, 'updateCredentialCertificate']);
+        $app->delete ('/api/settings/signing/profiles/{id:[0-9]+}/credentials/certificate', [SigningProfilesAction::class, 'deleteCredentialCertificate']);
+        $app->get    ('/api/settings/signing/profiles/{id:[0-9]+}', [SigningProfilesAction::class, 'getProfile']);
+        $app->put    ('/api/settings/signing/profiles/{id:[0-9]+}', [SigningProfilesAction::class, 'updateProfile']);
+        $app->delete ('/api/settings/signing/profiles/{id:[0-9]+}', [SigningProfilesAction::class, 'deleteProfile']);
         $app->get    ('/api/settings/currencies',                     [SettingsAction::class, 'listCurrencies']);
         $app->post   ('/api/settings/currencies',                     [SettingsAction::class, 'createCurrency']);
         $app->put    ('/api/settings/currencies/{id:[0-9]+}',         [SettingsAction::class, 'updateCurrency']);
         $app->delete ('/api/settings/currencies/{id:[0-9]+}',         [SettingsAction::class, 'deleteCurrency']);
+        $app->get    ('/api/settings/bank-email-notices',             [BankEmailNoticeAction::class, 'overview']);
+        $app->put    ('/api/settings/bank-email-notices/imap',        [BankEmailNoticeAction::class, 'updateImap']);
+        $app->post   ('/api/settings/bank-email-notices/imap/test',   [BankEmailNoticeAction::class, 'testImap']);
+        $app->post   ('/api/settings/bank-email-notices/imap-accounts', [BankEmailNoticeAction::class, 'createImapAccount']);
+        $app->post   ('/api/settings/bank-email-notices/imap-accounts/folders', [BankEmailNoticeAction::class, 'browseImapFolders']);
+        $app->put    ('/api/settings/bank-email-notices/imap-accounts/{id:[0-9]+}', [BankEmailNoticeAction::class, 'updateImapAccount']);
+        $app->delete ('/api/settings/bank-email-notices/imap-accounts/{id:[0-9]+}', [BankEmailNoticeAction::class, 'deleteImapAccount']);
+        $app->post   ('/api/settings/bank-email-notices/imap-accounts/{id:[0-9]+}/test', [BankEmailNoticeAction::class, 'testImapAccount']);
+        $app->post   ('/api/settings/bank-email-notices/imap-accounts/{id:[0-9]+}/folders', [BankEmailNoticeAction::class, 'browseImapFolders']);
+        $app->post   ('/api/settings/bank-email-notices/providers',   [BankEmailNoticeAction::class, 'createProvider']);
+        $app->put    ('/api/settings/bank-email-notices/providers/{id:[0-9]+}', [BankEmailNoticeAction::class, 'updateProvider']);
+        $app->delete ('/api/settings/bank-email-notices/providers/{id:[0-9]+}', [BankEmailNoticeAction::class, 'deleteProvider']);
+        $app->put    ('/api/settings/bank-email-notices/mappings',    [BankEmailNoticeAction::class, 'updateMappings']);
+        $app->post   ('/api/settings/bank-email-notices/parser/test', [BankEmailNoticeAction::class, 'testParser']);
+        $app->post   ('/api/settings/bank-email-notices/scan',        [BankEmailNoticeAction::class, 'scan']);
+        $app->get    ('/api/settings/bank-email-notices/messages',    [BankEmailNoticeAction::class, 'messages']);
+        $app->delete ('/api/settings/bank-email-notices/messages/{id:[0-9]+}', [BankEmailNoticeAction::class, 'deleteMessage']);
 
         $app->get    ('/api/settings/vat-rates',                      [SettingsAction::class, 'listVatRates']);
         $app->post   ('/api/settings/vat-rates',                      [SettingsAction::class, 'createVatRate']);

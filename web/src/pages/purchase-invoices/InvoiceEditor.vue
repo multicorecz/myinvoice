@@ -939,7 +939,7 @@ function fieldErr(key: string): string | null {
             <label class="block text-sm text-neutral-700 mb-1">{{ t('purchase_invoice.fields.varsymbol') }}</label>
             <input v-model="form.varsymbol" type="text" maxlength="20"
                    class="w-full h-10 px-3 border border-neutral-300 rounded-md text-sm font-mono"
-                   placeholder="PF-202605-NNNN" />
+                   placeholder="PF2605001" />
             <p class="text-xs text-neutral-500 mt-1">{{ t('purchase_invoice.fields.varsymbol_hint') }}</p>
           </div>
         </div>
@@ -963,6 +963,10 @@ function fieldErr(key: string): string | null {
             <input v-model="form.received_at" type="date" class="w-full h-10 px-3 border border-neutral-300 rounded-md text-sm" />
           </div>
         </div>
+        <!-- RC: DPH období se řídí DUZP (§ 25 / § 24), ne datem vystavení — issue #117 -->
+        <p v-if="form.reverse_charge" class="text-xs text-neutral-500 -mt-2">
+          {{ t('purchase_invoice.fields.tax_date_rc_hint') }}
+        </p>
 
         <!-- Currency + exchange rate -->
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">

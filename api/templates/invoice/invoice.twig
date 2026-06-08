@@ -71,7 +71,17 @@
       <div class="spacer-4">&nbsp;</div>
       <div class="ic-dic">
         {% if supplier.ic %}{{ t('IČO', 'Reg. No.') }}: {{ supplier.ic }}<br>{% endif %}
-        {% if supplier.dic %}{{ t('DIČ', 'VAT ID') }}: {{ supplier.dic }}{% endif %}
+        {# SK plátce DPH (#120): DIČ s prefixem SK je „IČ DPH"; vedle něj patří DIČ = totéž bez
+           prefixu (supplier skdic nevede, SK DIČ se od IČ DPH liší jen prefixem). Neplátce má
+           v poli jen číslo bez prefixu → spadne do else a tiskne se jako DIČ. #}
+        {% if supplier.dic %}
+          {% if supplier.dic|upper starts with 'SK' %}
+            {{ t('DIČ', 'Tax ID') }}: {{ supplier.dic|slice(2) }}<br>
+            {{ t('IČ DPH', 'VAT ID') }}: {{ supplier.dic }}
+          {% else %}
+            {{ t('DIČ', 'VAT ID') }}: {{ supplier.dic }}
+          {% endif %}
+        {% endif %}
       </div>
     </td>
     <td>
@@ -87,8 +97,21 @@
       <div>{{ locale == 'en' ? client.country_name_en : client.country_name_cs }}</div>
       <div class="spacer-4">&nbsp;</div>
       <div class="ic-dic">
+        {# Národní daňové číslo (#120): SK DIČ / DE+AT Steuernummer / PL NIP / HU Adószám —
+           nativní label podle země klienta. `dic` zůstává VAT ID s prefixem (u SK = IČ DPH,
+           u SK se proto VAT řádek labeluje „IČ DPH"). Pořadí dle SK praxe: IČO, DIČ, IČ DPH.
+           Starší SK snapshoty tax_number nemají → odvodíme z IČ DPH oseknutím prefixu
+           (SK DIČ se od IČ DPH liší jen prefixem; u DE/PL/HU odvodit nejde). #}
+        {% set tax_no_labels = {'SK': 'DIČ', 'DE': 'Steuernummer', 'AT': 'Steuernummer', 'PL': 'NIP', 'HU': 'Adószám'} %}
+        {% set client_dic_sk = client.dic and (client.dic|upper starts with 'SK') %}
+        {% set client_tax_no = client.tax_number|default(client_dic_sk ? client.dic|slice(2) : '') %}
         {% if client.ic %}{{ t('IČO', 'Reg. No.') }}: {{ client.ic }}<br>{% endif %}
-        {% if client.dic %}{{ t('DIČ', 'VAT ID') }}: {{ client.dic }}{% endif %}
+        {% if client_tax_no %}
+          {{ tax_no_labels[client.country_iso2|default('')]|default(client_dic_sk ? 'DIČ' : t('Daňové číslo', 'Tax No.')) }}: {{ client_tax_no }}{% if client.dic %}<br>{% endif %}
+        {% endif %}
+        {% if client.dic %}
+          {{ client_dic_sk ? t('IČ DPH', 'VAT ID') : t('DIČ', 'VAT ID') }}: {{ client.dic }}
+        {% endif %}
       </div>
     </td>
   </tr>
@@ -104,12 +127,17 @@
     <td class="meta-value">{{ invoice.due_date|date(date_format) }}</td>
   </tr>
   <tr class="meta-sep">
-    {% if not supplier.is_vat_payer %}
+    {# Identifikovaná osoba (§ 6g–6l, #94) na zahraničním RC dokladu řádek „Není plátce DPH"
+       nemá (matl by příjemce s povinností samovyměření) — nahrazuje ho RC klauzule + DIČ. #}
+    {% if not supplier.is_vat_payer and not (supplier.is_identified|default(false) and invoice.reverse_charge) %}
       <td class="meta-label">{{ t('DPH', 'VAT') }}</td>
       <td class="meta-value">{{ t('Není plátce DPH', 'Not a VAT payer') }}</td>
-    {% else %}
+    {% elseif supplier.is_vat_payer %}
       <td class="meta-label">{{ t('DUZP', 'Tax point') }}</td>
       <td class="meta-value">{{ invoice.tax_date ? invoice.tax_date|date(date_format) : '—' }}</td>
+    {% else %}
+      <td class="meta-label"></td>
+      <td class="meta-value"></td>
     {% endif %}
     <td class="meta-label">{{ t('Měna', 'Currency') }}</td>
     <td class="meta-value mono">{{ invoice.currency }}</td>
@@ -225,7 +253,13 @@
       <th class="num nowrap" style="width:9%">{{ t('Mn.', 'Qty') }}</th>
       <th class="nowrap" style="width:8%">{{ t('Jed.', 'Unit') }}</th>
       <th class="num nowrap" style="width:18%">{{ t('Cena/j', 'Price/unit') }}</th>
+      {# RC doklad neplátce/IO: částky jsou základ daně (samovyměří odběratel) —
+         sloupec to musí říct, neutrální „Celkem" by byl nejednoznačný. #}
+      {% if invoice.reverse_charge %}
+      <th class="num nowrap" style="width:23%">{{ t('Celkem bez DPH', 'Total excl. VAT') }}</th>
+      {% else %}
       <th class="num nowrap" style="width:23%">{{ t('Celkem', 'Total') }}</th>
+      {% endif %}
       {% endif %}
     </tr>
   </thead>
@@ -271,8 +305,15 @@
 
 {% if invoice.reverse_charge %}
 <div class="note rc-note">
+  {# Tuzemský RC mezi plátci = § 92a ZDPH; přeshraniční plnění (klient mimo CZ,
+     vč. faktur identifikované osoby do EU) = čl. 196 směrnice 2006/112/ES. #}
+  {% if client.country_iso2|default('CZ') == 'CZ' %}
   {{ t('Daň odvede zákazník (přenesená daňová povinnost dle § 92a zákona o DPH).',
        'Reverse charge — VAT to be accounted for by the customer.') }}
+  {% else %}
+  {{ t('Daň odvede zákazník (přenesení daňové povinnosti dle čl. 196 směrnice 2006/112/ES).',
+       'Reverse charge — VAT to be accounted for by the customer pursuant to Article 196 of Council Directive 2006/112/EC.') }}
+  {% endif %}
 </div>
 {% endif %}
 

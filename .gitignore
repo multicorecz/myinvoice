@@ -43,3 +43,8 @@ storage/mpdf-temp/*
 preview/
 .claude/
 *.bak.*
+
+# docasne soubory commit/issue zprav (Claude workflow)
+COMMIT_MSG.tmp
+ISSUE_COMMENT.tmp
+RELEASE_NOTES.tmp
