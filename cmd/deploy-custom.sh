@@ -9,7 +9,7 @@ set -euo pipefail
 
 BRANCH="${BRANCH:-custom-faktura-design}"
 FORK="${FORK:-https://github.com/multicorecz/myinvoice.git}"
-BUILD="${BUILD:-/opt/myinvoice-build}"
+BUILD="${BUILD:-$HOME/myinvoice-build}"
 DEPLOY="${DEPLOY:-/opt/myinvoice}"
 IMAGE="${IMAGE:-myinvoice:custom}"
 COMPOSE="${COMPOSE:-docker-compose.production.yml}"
