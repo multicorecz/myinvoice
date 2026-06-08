@@ -5,6 +5,41 @@ All notable changes to MyInvoice.cz are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.19.6] — 2026-06-08
+
+### Added
+
+- **Export vydaných faktur do Stereo XML ([#126](https://github.com/radekhulan/myinvoice/pull/126), díky @blondak).** Administrace exportů (Daně → Export vydaných faktur) nově nabízí formát **Stereo XML** — DocumentPack XML pro import vydaných faktur do účetního systému **Kastner Stereo** (přes „Import faktury (XML)"). Funguje za měsíc i celé čtvrtletí, stejně jako ostatní formáty. Mapování DPH klasifikace na Stereo `TypeOfVAT` řeší `StereoVatTypeResolver` (zdroj pravdy = klasifikace řádků dokladu). Součástí je i sdílený `InvoiceExportDataResolver` pro dohledání dodavatele/klienta/banky (snapshot vyhrává nad live daty) — refaktor sjednocuje logiku dříve duplikovanou v ISDOC a Pohoda exportérech, beze změny jejich chování.
+- **SMTP log analýza: klikací souhrnné karty.** Karty **Doručeno / Odloženo / Odmítnuto** nad tabulkou fungují jako rychlý přepínač filtru stavu dole (klik zapne/vypne, aktivní karta se zvýrazní). Karta „Odmítnuto" sčítá `rejected` i `error`, proto filtruje složeně přes obě hodnoty (volba „Odmítnuté + chyby" je i v rozbalovacím filtru).
+
+### Changed
+
+- **Stránka „Export vydaných faktur" je širší.** Po přidání čtvrtého formátu (Stereo) má výběr formátů (PDF / ISDOC / Pohoda / Stereo) v řadě víc místa.
+
+## [4.19.5] — 2026-06-08
+
+### Fixed
+
+- **Oprava diakritiky ve jméně autora** v modálu „Chcete jinou funkci?" — „Radek Hulan" → „Radek Hulán" (cs i en).
+
+## [4.19.4] — 2026-06-08
+
+### Added
+
+- **Patička: „Podpořte autora" a „Chcete jinou funkci?".** Odkazy v patičce aplikace nově otevírají přehledná modální okna. **Podpora autora** zobrazí bankovní spojení pro dar (účet u Partners Banky, IBAN, BIC/SWIFT) a **QR kód** k platbě (roztažený na plnou šířku se zachovaným poměrem stran, jemně zesvětlený). **Chcete jinou funkci?** představí, kdo MyInvoice vyvíjí (MyWebdesign.cz s.r.o. — 20 let na trhu, seniorní vývoj akcelerovaný AI, reference jako Prazdroj, ZOOT či Syntex) a nabídne poptávku na vývoj vlastních funkcí, reportů či napojení s tlačítkem vedoucím na kontaktní formulář. Oba dialogy jsou plně lokalizované (cs/en).
+
+## [4.19.3] — 2026-06-08
+
+### Added
+
+- **Hromadný export umí celé čtvrtletí.** „Hromadný export" (dříve „Měsíční export", Daně → Hromadný export) má nově přepínač **Měsíc / Čtvrtletí** — kromě jednoho měsíce lze do jednoho ZIPu sbalit doklady za celý kvartál (`Q1`–`Q4`). Zařazení dokladů do období zůstává daňově korektní a shodné s výkazy DPH (vystavené dle DUZP, přijaté dle pozdějšího z DUZP/vystavení, výpisy dle data výpisu). **Kniha DPH** se u čtvrtletí přiloží jako **tři měsíční PDF** (jeden za každý měsíc kvartálu). Stejný kvartální režim už dříve nabídl i export vydaných a přijatých faktur.
+
+### Changed
+
+- **„Měsíční export" přejmenován na „Hromadný export".** Název v menu, na stránce i v ZIP balíčku (README) lépe vystihuje, že jde o kompletní balíček dokladů za zvolené období — měsíc i čtvrtletí. Manuál § 32.
+- **Export vydaných faktur má stejný vzhled jako Export přijatých.** Stránka „Export vydaných faktur" byla sjednocena s „Exportem přijatých faktur" — širší layout, výběr formátu v přehledné trojici karet s barevnými ikonami a konzistentní rozložení polí období / filtru / typu.
+- **Exporty defaultně nabízejí předchozí měsíc.** Všechny exporty (vydané, přijaté i hromadný) se otevírají s předvyplněným **minulým měsícem** místo rozpracovaného aktuálního — odpovídá tomu, že se export typicky dělá po uzávěrce právě skončeného měsíce.
+
 ## [4.19.2] — 2026-06-08
 
 ### Fixed
