@@ -84,10 +84,20 @@ SELECT u.id, s.id FROM users u CROSS JOIN supplier s
 ON DUPLICATE KEY UPDATE user_id = user_id;
 ```
 
-### 3.2 Pravidla
-- `admin` = super-admin → všechny firmy (junction se ignoruje).
-- `accountant`/`readonly` → jen firmy z `user_supplier`.
-- Feature flag `access.per_supplier_enabled` (default `false`): když OFF → chová se jako dnes (vše všem).
+### 3.2 Pravidla — FAIL-OPEN (důležité)
+Návrh je záměrně **fail-open** (nikdy nikoho omylem nezamkne, snadné opuštění):
+
+| Stav | Výsledek |
+|---|---|
+| Flag `per_supplier_enabled = false` (default) | **allow-all** — tabulka se vůbec nečte (může neexistovat) |
+| Flag ON + `user_supplier` **prázdná** (0 řádků celkem) | **allow-all** — ještě nenakonfigurováno |
+| Flag ON + tabulka má řádky + `admin` | **vše** (super-admin) |
+| Flag ON + tabulka má řádky + ne-admin | jen jeho `user_supplier` řádky (0 řádků = deny, **záměrné**) |
+
+- **Abandon:** přepni flag na `false` → okamžitě allow-all; pak klidně `DROP TABLE user_supplier` +
+  smaž `api/src/Access/` + revert háčků (`CUSTOM-PATCHES.md`).
+- **Čistá tabulka → všichni všechno** ✅ (fail-open); teprve první přiřazení režim reálně zapne.
+- Grandfather migrace (§3.1) navíc dá stávajícím uživatelům všechny firmy → žádný lockout při zapnutí.
 
 ---
 
@@ -105,14 +115,23 @@ final class SupplierAccess
     public function isSuperAdmin(array $user): bool {
         return ($user['role'] ?? '') === 'admin';
     }
-    /** @return int[] povolené supplier_id; prázdné = žádná firma */
+    /** @return int[] povolené supplier_id (FAIL-OPEN — viz §3.2) */
     public function allowedIds(array $user): array {
-        if (!$this->enabled() || $this->isSuperAdmin($user)) {
-            return array_map('intval', $this->db->pdo()->query('SELECT id FROM supplier')->fetchAll(\PDO::FETCH_COLUMN));
+        $all = fn(): array => array_map('intval',
+            $this->db->pdo()->query('SELECT id FROM supplier')->fetchAll(\PDO::FETCH_COLUMN));
+
+        if (!$this->enabled() || $this->isSuperAdmin($user)) return $all();   // flag OFF / admin → vše
+
+        try {
+            // Fail-open: dokud je junction tabulka prázdná (nenakonfigurováno) → allow-all.
+            $configured = (bool) $this->db->pdo()->query('SELECT EXISTS(SELECT 1 FROM user_supplier)')->fetchColumn();
+            if (!$configured) return $all();
+            $st = $this->db->pdo()->prepare('SELECT supplier_id FROM user_supplier WHERE user_id = ?');
+            $st->execute([(int) $user['id']]);
+            return array_map('intval', $st->fetchAll(\PDO::FETCH_COLUMN));
+        } catch (\Throwable) {
+            return $all();   // tabulka chybí (např. po DROP při abandonu) → fail-open
         }
-        $st = $this->db->pdo()->prepare('SELECT supplier_id FROM user_supplier WHERE user_id = ?');
-        $st->execute([(int) $user['id']]);
-        return array_map('intval', $st->fetchAll(\PDO::FETCH_COLUMN));
     }
     public function canAccess(array $user, int $sid): bool {
         return in_array($sid, $this->allowedIds($user), true);
