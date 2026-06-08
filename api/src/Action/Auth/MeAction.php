@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace MyInvoice\Action\Auth;
 
+use MyInvoice\Access\SupplierAccess;
 use MyInvoice\Http\Json;
 use MyInvoice\Infrastructure\Config\Config;
 use MyInvoice\Infrastructure\Database\Connection;
@@ -17,6 +18,7 @@ final class MeAction
     public function __construct(
         private readonly Connection $db,
         private readonly Config $config,
+        private readonly SupplierAccess $access,
     ) {}
 
     public function __invoke(Request $request, Response $response): Response
@@ -25,11 +27,15 @@ final class MeAction
         $session = (array) $request->getAttribute(AuthMiddleware::ATTR_SESSION, []);
         $currentSupplierId = (int) $request->getAttribute(SupplierScopeMiddleware::ATTR_CURRENT_ID, 0);
 
+        // CUSTOM(fork): seznam firem omezený na ty, ke kterým má uživatel přístup.
+        // FAIL-OPEN — při flagu OFF / super-adminovi / prázdné tabulce vrátí allowedIds všechny.
+        $allowedIds = $this->access->allowedIds($user);
+        $inClause = $allowedIds !== [] ? implode(',', array_map('intval', $allowedIds)) : '0';
         $suppliers = $this->db->pdo()->query(
             'SELECT id, company_name, ic, is_vat_payer, is_identified, taxpayer_type,
                     default_payment_due_days, default_payment_due_unit, default_prices_include_vat,
                     auto_send_reminders, payment_thanks_enabled, payment_thanks_default_checked
-               FROM supplier ORDER BY id'
+               FROM supplier WHERE id IN (' . $inClause . ') ORDER BY id'
         )->fetchAll(\PDO::FETCH_ASSOC);
         foreach ($suppliers as &$s) {
             $s['id']                       = (int) $s['id'];

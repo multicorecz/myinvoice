@@ -41,6 +41,7 @@ final class UserAdminAction
         foreach ($rows as &$r) {
             $r['id'] = (int) $r['id'];
             $r['is_active'] = (bool) $r['is_active'];
+            $r['supplier_ids'] = $this->suppliersOf((int) $r['id']); // CUSTOM(fork)
         }
         return Json::ok($response, $rows);
     }
@@ -80,6 +81,12 @@ final class UserAdminAction
         }
         $id = (int) $this->db->pdo()->lastInsertId();
         $this->log($request, 'user.created', $id, ['email' => $email, 'role' => $role]);
+        // CUSTOM(fork): volitelné přiřazení firem
+        if (array_key_exists('supplier_ids', $body)) {
+            if (!$this->setSuppliers($id, $body['supplier_ids'])) {
+                return Json::error($response, 'validation_failed', 'Neplatná firma v supplier_ids.', 400);
+            }
+        }
         return Json::ok($response, $this->fetchUser($id), 201);
     }
 
@@ -124,7 +131,21 @@ final class UserAdminAction
             $sets[] = 'password_hash = ?';
             $params[] = $this->hasher->hash((string) $body['password']);
         }
-        if (empty($sets)) return Json::ok($response, $row);
+        // CUSTOM(fork): přiřazení firem může být i jediná změna (bez $sets).
+        $touchedSuppliers = false;
+        if (array_key_exists('supplier_ids', $body)) {
+            if (!$this->setSuppliers($id, $body['supplier_ids'])) {
+                return Json::error($response, 'validation_failed', 'Neplatná firma v supplier_ids.', 400);
+            }
+            $touchedSuppliers = true;
+        }
+        if (empty($sets)) {
+            if ($touchedSuppliers) {
+                $this->log($request, 'user.suppliers_changed', $id, ['supplier_ids' => array_map('intval', (array) $body['supplier_ids'])]);
+                return Json::ok($response, $this->fetchUser($id));
+            }
+            return Json::ok($response, $row);
+        }
 
         // Guard: nesmí dojít k odebrání posledního aktivního admina
         $willBeAdmin = isset($body['role']) ? ($body['role'] === 'admin') : ($row['role'] === 'admin');
@@ -192,7 +213,49 @@ final class UserAdminAction
         if (!$r) return null;
         $r['id'] = (int) $r['id'];
         $r['is_active'] = (bool) $r['is_active'];
+        $r['supplier_ids'] = $this->suppliersOf((int) $r['id']); // CUSTOM(fork): přiřazené firmy
         return $r;
+    }
+
+    /**
+     * CUSTOM(fork): přiřazené firmy uživatele.
+     * @return int[]
+     */
+    private function suppliersOf(int $userId): array
+    {
+        $st = $this->db->pdo()->prepare('SELECT supplier_id FROM user_supplier WHERE user_id = ? ORDER BY supplier_id');
+        $st->execute([$userId]);
+        return array_map('intval', $st->fetchAll(\PDO::FETCH_COLUMN));
+    }
+
+    /**
+     * CUSTOM(fork): přepíše množinu firem uživatele (DELETE+INSERT v transakci).
+     * Vrací false, pokud nějaké supplier_id neexistuje (pak se nic nezmění).
+     * @param mixed $ids
+     */
+    private function setSuppliers(int $userId, $ids): bool
+    {
+        $ids = array_values(array_unique(array_map('intval', (array) $ids)));
+        if ($ids !== []) {
+            $place = implode(',', array_fill(0, count($ids), '?'));
+            $st = $this->db->pdo()->prepare("SELECT COUNT(*) FROM supplier WHERE id IN ($place)");
+            $st->execute($ids);
+            if ((int) $st->fetchColumn() !== count($ids)) return false;
+        }
+        $pdo = $this->db->pdo();
+        $pdo->beginTransaction();
+        try {
+            $pdo->prepare('DELETE FROM user_supplier WHERE user_id = ?')->execute([$userId]);
+            if ($ids !== []) {
+                $ins = $pdo->prepare('INSERT INTO user_supplier (user_id, supplier_id) VALUES (?, ?)');
+                foreach ($ids as $sid) $ins->execute([$userId, $sid]);
+            }
+            $pdo->commit();
+        } catch (\Throwable $e) {
+            $pdo->rollBack();
+            throw $e;
+        }
+        return true;
     }
 
     private function log(Request $request, string $action, int $entityId, array $payload): void

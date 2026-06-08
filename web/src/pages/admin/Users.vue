@@ -4,12 +4,17 @@ import { useI18n } from 'vue-i18n'
 import { RouterLink } from 'vue-router'
 import { adminApi, type AdminUser } from '@/api/admin'
 import { useAuthStore } from '@/stores/auth'
+import { useSupplierStore } from '@/stores/supplier'
 import { useToast } from '@/composables/useToast'
 import { useHotkey } from '@/composables/useHotkey'
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const auth = useAuthStore()
+const supplierStore = useSupplierStore()
 const toast = useToast()
+// CUSTOM(fork): popisky inline (bez zásahu do i18n)
+const accessLabel = computed(() => locale.value === 'en' ? 'Company access' : 'Přístup k firmám')
+const adminAllLabel = computed(() => locale.value === 'en' ? 'Admin has access to all companies' : 'Admin má přístup ke všem firmám')
 
 const users = ref<AdminUser[]>([])
 const loading = ref(false)
@@ -31,7 +36,13 @@ const form = reactive({
   locale: 'cs' as 'cs' | 'en',
   is_active: true,
   password: '',
+  supplier_ids: [] as number[],   // CUSTOM(fork): přiřazené firmy
 })
+function toggleSupplier(id: number) {
+  const i = form.supplier_ids.indexOf(id)
+  if (i >= 0) form.supplier_ids.splice(i, 1)
+  else form.supplier_ids.push(id)
+}
 
 async function load() {
   loading.value = true
@@ -41,11 +52,11 @@ async function load() {
 onMounted(load)
 
 function openCreate() {
-  Object.assign(form, { id: null, email: '', name: '', role: 'readonly', locale: 'cs', is_active: true, password: '' })
+  Object.assign(form, { id: null, email: '', name: '', role: 'readonly', locale: 'cs', is_active: true, password: '', supplier_ids: [] })
   showForm.value = true
 }
 function openEdit(u: AdminUser) {
-  Object.assign(form, { id: u.id, email: u.email, name: u.name, role: u.role, locale: u.locale, is_active: u.is_active, password: '' })
+  Object.assign(form, { id: u.id, email: u.email, name: u.name, role: u.role, locale: u.locale, is_active: u.is_active, password: '', supplier_ids: [...(u.supplier_ids ?? [])] })
   showForm.value = true
 }
 
@@ -63,14 +74,18 @@ async function save() {
     }
   }
   try {
+    // CUSTOM(fork): u role 'admin' přiřazení neukládáme (vidí vše)
+    const supplierIds = form.role === 'admin' ? [] : form.supplier_ids
     if (form.id === null) {
       if (!form.password) { error.value = t('users.password_required'); return }
       await adminApi.createUser({
         email: form.email, name: form.name, role: form.role, locale: form.locale, password: form.password,
+        supplier_ids: supplierIds,
       })
     } else {
       const payload: Record<string, unknown> = {
         name: form.name, role: form.role, locale: form.locale, is_active: form.is_active,
+        supplier_ids: supplierIds,
       }
       if (form.password) payload.password = form.password
       await adminApi.updateUser(form.id, payload)
@@ -233,6 +248,19 @@ function roleBadge(role: string): string {
                 <option value="cs">cs</option>
                 <option value="en">en</option>
               </select>
+            </div>
+          </div>
+          <!-- CUSTOM(fork): přístup k firmám (per-firemní přístup) -->
+          <div>
+            <label class="block text-sm font-medium text-neutral-700 mb-1">{{ accessLabel }}</label>
+            <p v-if="form.role === 'admin'" class="text-xs text-neutral-500">{{ adminAllLabel }}</p>
+            <div v-else class="max-h-40 overflow-y-auto border border-neutral-300 rounded-md p-2 space-y-1">
+              <label v-for="s in supplierStore.availableSuppliers" :key="s.id"
+                class="flex items-center gap-2 text-sm cursor-pointer">
+                <input type="checkbox" :checked="form.supplier_ids.includes(s.id)" @change="toggleSupplier(s.id)"
+                  class="rounded border-neutral-300 text-primary-600" />
+                {{ s.company_name }}
+              </label>
             </div>
           </div>
           <div v-if="form.id !== null">

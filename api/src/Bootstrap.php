@@ -142,6 +142,7 @@ final class Bootstrap
         $app->add($container->get(CsrfMiddleware::class));           // potřebuje session z Auth (bearer skip)
         $app->add($container->get(RateLimitMiddleware::class));      // chrání forgot/setup/login/ARES + per-user/per-token limity
         $app->add($container->get(ApiScopeMiddleware::class));       // bearer-only: enforce read / read_write scope
+        $app->add($container->get(\MyInvoice\Access\SupplierAccessMiddleware::class)); // CUSTOM(fork): per-firemní přístup — běží PO SupplierScope, viz CUSTOM-PATCHES.md
         $app->add($container->get(SupplierScopeMiddleware::class));  // multi-supplier scope (X-Supplier-Id / token's supplier_id)
         $app->add($container->get(RoleMiddleware::class));           // RBAC — kontrola role po Auth
         $app->add($container->get(RequireTotpMiddleware::class));    // vynucení 2FA pokud cfg.auth.require_totp=true (bearer skip)
