@@ -21,6 +21,7 @@ CREATE TABLE IF NOT EXISTS user_supplier (
 
 -- GRANDFATHER: existující uživatelé dostanou VŠECHNY existující firmy → chování se nemění,
 -- i kdyby se flag zapnul. Nové instalace mají tabulku prázdnou → fail-open (allow-all).
-INSERT INTO user_supplier (user_id, supplier_id)
-SELECT u.id, s.id FROM users u CROSS JOIN supplier s
-ON DUPLICATE KEY UPDATE user_id = user_id;
+-- INSERT IGNORE (ne ON DUPLICATE) — duplicitní PK přeskočí; navíc ON DUPLICATE po CROSS JOIN
+-- koliduje s parserem (ON se bere jako JOIN podmínka).
+INSERT IGNORE INTO user_supplier (user_id, supplier_id)
+SELECT u.id, s.id FROM users u CROSS JOIN supplier s;
