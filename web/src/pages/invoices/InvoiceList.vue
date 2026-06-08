@@ -17,7 +17,7 @@ import EmptyState from '@/components/ui/EmptyState.vue'
 import SearchableSelect from '@/components/ui/SearchableSelect.vue'
 import WorkReportModal from '@/components/modals/WorkReportModal.vue'
 
-const { t, tm, rt } = useI18n()
+const { t, tm, rt, locale } = useI18n()
 const toast = useToast()
 const auth = useAuthStore()
 const supplierStore = useSupplierStore()
@@ -47,6 +47,30 @@ const unpaidOnly = ref(false)
 const currencyFilter = ref<string>('')
 const clients = ref<Client[]>([])
 const currencies = ref<Currency[]>([])
+
+// Přepínač zobrazení: seskupit po měsících (default) vs. plochý jeden seznam.
+const FLAT_MONTH = '__flat__'
+const groupByMonth = ref<boolean>(localStorage.getItem('myinvoice.invoice_group_by_month') !== '0')
+watch(groupByMonth, (v) => localStorage.setItem('myinvoice.invoice_group_by_month', v ? '1' : '0'))
+// V plochém režimu vyrobíme jednu syntetickou skupinu se všemi fakturami → reuse stejného renderu tabulky.
+const displayGroups = computed<MonthGroup[]>(() => {
+  if (groupByMonth.value) return groups.value
+  const invoices = groups.value.flatMap(g => g.invoices)
+  if (!invoices.length) return []
+  const totals: MonthGroup['totals_per_currency'] = []
+  for (const g of groups.value) for (const tc of g.totals_per_currency) {
+    const f = totals.find(x => x.currency === tc.currency)
+    if (f) { f.without_vat = Math.round((f.without_vat + tc.without_vat) * 100) / 100
+             f.vat        = Math.round((f.vat        + tc.vat)        * 100) / 100
+             f.with_vat   = Math.round((f.with_vat   + tc.with_vat)   * 100) / 100 }
+    else totals.push({ ...tc })
+  }
+  return [{ month: FLAT_MONTH, count: invoices.length, invoices, totals_per_currency: totals }]
+})
+const viewToggleLabel = computed(() => groupByMonth.value
+  ? (locale.value === 'en' ? 'Flat list' : 'Plochý seznam')
+  : (locale.value === 'en' ? 'By month' : 'Po měsících'))
+const flatHeaderLabel = computed(() => locale.value === 'en' ? 'All invoices' : 'Všechny faktury')
 
 const selectedIds = ref<number[]>([])
 const bulkBusy = ref(false)
@@ -574,8 +598,14 @@ const monthOptions = computed(() => (tm('common.months_short') as unknown as str
           <input v-model="unpaidOnly" type="checkbox" class="rounded border-neutral-300 text-primary-600" />
           {{ t('invoice.unpaid_only') }}
         </label>
+        <button @click="groupByMonth = !groupByMonth"
+          class="cursor-pointer ml-auto h-9 px-3 border border-neutral-300 text-neutral-700 hover:bg-neutral-50 rounded-md text-sm inline-flex items-center gap-1.5"
+          :title="viewToggleLabel">
+          <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 12h16M4 18h16"/></svg>
+          {{ viewToggleLabel }}
+        </button>
         <button @click="exportCsv"
-          class="cursor-pointer ml-auto h-9 px-3 border border-primary-500/40 text-primary-700 hover:bg-primary-50 rounded-md text-sm inline-flex items-center gap-1.5">
+          class="cursor-pointer h-9 px-3 border border-primary-500/40 text-primary-700 hover:bg-primary-50 rounded-md text-sm inline-flex items-center gap-1.5">
           <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3M3 17V7a2 2 0 0 1 2-2h11l5 5v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
           {{ t('invoice.csv_export') }}
         </button>
@@ -596,11 +626,11 @@ const monthOptions = computed(() => (tm('common.months_short') as unknown as str
         <span v-if="total > loadedCount">{{ t('common.loaded_count', { loaded: loadedCount, total }) }}</span>
       </div>
 
-      <!-- Skupiny po měsících -->
-      <section v-for="g in groups" :key="g.month" class="mb-5">
+      <!-- Skupiny po měsících (nebo jedna plochá skupina v režimu „seznam") -->
+      <section v-for="g in displayGroups" :key="g.month" class="mb-5">
         <header class="sticky top-16 z-[5] flex items-center justify-between bg-neutral-50/95 backdrop-blur border border-neutral-200 rounded-t-lg px-4 py-2.5 mb-0">
           <div class="flex items-center gap-3">
-            <h2 class="text-sm font-semibold uppercase tracking-wide text-neutral-700">{{ formatMonth(g.month) }}</h2>
+            <h2 class="text-sm font-semibold uppercase tracking-wide text-neutral-700">{{ g.month === '__flat__' ? flatHeaderLabel : formatMonth(g.month) }}</h2>
             <span class="text-xs text-neutral-500">{{ g.count }} {{ g.count === 1 ? t('invoice.doc_1') : (g.count < 5 ? t('invoice.doc_2_4') : t('invoice.doc_5plus')) }}</span>
           </div>
           <div class="flex items-center gap-3 text-xs">
