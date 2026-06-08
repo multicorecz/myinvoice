@@ -197,3 +197,9 @@ html, body {
     background-color: var(--color-neutral-400);
   }
 }
+
+@layer utilities {
+  .uppercase {
+    width: 100%;
+  }
+}
