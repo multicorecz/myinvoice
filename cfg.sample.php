@@ -87,7 +87,7 @@ return [
     // ─── CUSTOM(fork): per-firemní přístup uživatelů ───────────────────────────────
     // false (default) = vypnuto → každý uživatel vidí všechny firmy (jako dnes; FAIL-OPEN).
     // true = uživatel vidí jen firmy přiřazené ve správě uživatelů; role 'admin' = vše.
-    // Tabulku user_supplier plní migrace 0106. Viz docs/spec-per-firemni-pristup.md + CUSTOM-PATCHES.md.
+    // Tabulku user_supplier plní migrace 0107. Viz docs/spec-per-firemni-pristup.md + CUSTOM-PATCHES.md.
     'access' => [
         'per_supplier_enabled' => false,
     ],

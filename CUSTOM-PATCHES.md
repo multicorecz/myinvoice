@@ -30,7 +30,7 @@ porty upstream **datové** nuance (SK DPH, identifikovaná osoba) do našich bun
 > Spec: `docs/spec-per-firemni-pristup.md`.
 
 **Nové soubory (0 konfliktů):**
-- `db/migrations/0106_user_supplier.sql` — tabulka `user_supplier` + grandfather.
+- `db/migrations/0107_user_supplier.sql` — tabulka `user_supplier` + grandfather.
 - `api/src/Access/SupplierAccess.php` — služba (allowedIds/canAccess, fail-open).
 - `api/src/Access/SupplierAccessMiddleware.php` — vynucení scope (po SupplierScope).
 - `web/src/pages/admin/...` — UI přiřazení firem (viz commit).
