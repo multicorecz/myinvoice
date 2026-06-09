@@ -1206,6 +1206,8 @@
     "doc_1": "doklad",
     "doc_2_4": "doklady",
     "doc_5plus": "dokladů",
+    "prediction": "predikce",
+    "prediction_hint": "Predikce vč. konceptů (rozpracováno {amount})",
     "dates_section": "Datumy",
     "modals": {
       "mark_paid_title": "Označit jako zaplacené",
@@ -1774,6 +1776,12 @@
     "upcoming_none": "žádné neuhrazené",
     "section_issued": "Vystavené faktury",
     "section_purchase": "Přijaté faktury",
+    "work_reports": {
+      "title": "Výkazy práce",
+      "hint": "(rozpracované koncepty vystavených faktur — doplň a vystav)",
+      "button": "Výkaz",
+      "no_project": "bez zakázky"
+    },
     "section_receivables_due": "Pohledávky podle splatnosti",
     "receivables_hint": "(co nám klienti dluží — z vystavených faktur)",
     "purchase_count_ytd": "Přijaté faktury YTD",

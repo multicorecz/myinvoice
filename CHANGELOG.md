@@ -5,6 +5,41 @@ All notable changes to MyInvoice.cz are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.20.1] — 2026-06-09
+
+### Fixed
+
+- **Skrytí akcí „Spáruj platby z banky" / „Zkontroluj koncepty přijatých faktur" / „Souhrnné hlášení" hlásilo `Invalid item_type`.** Nové typy akcí (z 4.20.0) chyběly v allowlistu i ve snapshotu pro režim „skrýt pro historická data" — doplněny, skrývání teď funguje pro všechny akce.
+- **Počítadlo (badge) u akce „Pošli upomínky" nesedělo s cílovým seznamem.** Počítalo jen ostré faktury, zatímco seznam `/invoices?overdue=1` od 4.20.0 zobrazuje i nezaplacené nespárované proformy. Dotaz akce nyní zrcadlí seznam (vč. proforem a vyřazení finálních dokladů k zaplacené proformě), takže číslo v odznaku odpovídá počtu v seznamu.
+
+## [4.20.0] — 2026-06-09
+
+### Added
+
+- **„Akce pro tebe" jsou nově na Přehledu (Dashboard) — jako první sekce.** Denní TODO seznam se přesunul z CRM dashboardu na úvodní Přehled, kde ho uvidíš hned po přihlášení. Logika (skrytí na den/týden/navždy/pro historická data i obnovení) zůstává beze změny; widget je vytažen do samostatné komponenty `ActionItemsWidget`.
+- **Nová sekce „Výkazy práce" na Přehledu.** Pokud máš rozpracované (koncept) vydané faktury, zobrazí se jako karty vedle sebe s **firmou** a **zakázkou**. Každá karta má tlačítko **Upravit** (otevře editor faktury) a **Výkaz** (otevře přímo popup výkazu práce — stejný jako v seznamu vydaných faktur), takže rozdělanou práci doplníš na jedno kliknutí.
+- **Tři nové akce v „Akce pro tebe":**
+  - **Spáruj platby z banky** → nespárované příchozí platby z bankovních výpisů (za posledních 90 dní) čekající na přiřazení k faktuře.
+  - **Zkontroluj koncepty přijatých faktur** → naimportované přijaté faktury (API / AI / PDF) zůstávají ve stavu koncept; připomene jejich revizi a zaúčtování.
+  - **Souhrnné hlášení za uplynulý měsíc** → upozornění na termín podání SH (25. dne), ale jen když za uplynulý měsíc skutečně existují EU plnění (jinak se SH nepodává a akce se nezobrazí).
+
+### Fixed
+
+- **Filtr „Nezaplacené" (`/invoices?unpaid=1`) nezobrazoval nezaplacené zálohové (proforma) faktury.** Filtr je vylučoval úplně; nově ukazuje i nezaplacené **nespárované** proformy (zálohovky bez navázaného finálního dokladu) — stejná pohledávková logika jako na dashboardu. Sjednoceno i s filtrem „Po splatnosti".
+- **Akce „Pošli upomínky" vedla na nefunkční odkaz.** Mířila na `/invoices?status=overdue` (neplatná hodnota stavu → prázdný seznam); nově správně na `/invoices?overdue=1`.
+- **Akce „Kontaktuj neaktivní klienty" nikam nevedla.** Místo obecného `/crm` teď skočí přímo na sekci „Riziko odchodu klientů" (kotva `#churn-risk`).
+
+## [4.19.7] — 2026-06-08
+
+### Fixed
+
+- **Děkovný e-mail za úhradu se neodesílal při automatickém spárování z banky ([#127](https://github.com/radekhulan/myinvoice/issues/127), díky @jssystemcz).** Při zapnutém „Posílat poděkování za úhradu → Automaticky při spárování platby z banky" se po zpracování e-mailového bankovního avíza faktura sice správně označila jako zaplacená, ale děkovný e-mail se neodeslal (a v e-mail logu po něm nebyla stopa). Poděkování posílala jen ruční cesta (označení jako uhrazené) a ruční spárování v UI; **automatické** cesty (e-mailové avízo, import GPC výpisu, cron) jdou přes `StatementMatcher`, který fakturu označoval jako paid napřímo a mailer nevolal. Nově se poděkování odešle ze společného místa všech automatických cest (trigger `bank_match`) — respektuje per-dodavatelský přepínač i ochranu proti dvojímu odeslání a případné selhání e-mailu nerozbije spárování.
+- **Oprava driftnutého číselníku DPH klasifikací (migrace 0106).** Na instalacích, kde globální systémový číselník (`vat_classifications`) mezitím odešel od stavu daňových migrací (kopie starší DB, re-seed), zůstaly chybné hodnoty: osvobozený tuzemský prodej (kód 3) korumpoval ř. 3 přiznání (pořízení zboží z JČS), přijaté plnění bez nároku na odpočet (kód 42) padalo do KH B.2/B.3 a chyběl kód `25s` (tuzemský režim přenesení daňové povinnosti – dodavatel → ř. 25). Idempotentní opravná migrace re-asertuje kanonický stav RC příznaků, samovyměření (ř. 43) i zařazení do řádků pro systémové kódy. Sahá výhradně na systémové řádky (uživatelské per-dodavatelské klasifikace zůstávají netknuté); na aktuální DB je bez efektu.
+
+### Internal
+
+- Úklid testů pro PHP 8.5: odstraněna no-op volání `curl_close()` a `ReflectionProperty::setAccessible()`; mocky používané jen jako stub přepsány na `createStub()`. Testová sada je bez deprecations a PHPUnit notices.
+
 ## [4.19.6] — 2026-06-08
 
 ### Added

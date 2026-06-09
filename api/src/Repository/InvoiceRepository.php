@@ -496,14 +496,26 @@ final class InvoiceRepository
         }
         if (!empty($filters['unpaid_only'])) {
             $where[] = "i.status IN ('issued','sent','reminded')";
-            $where[] = 'i.invoice_type IN ("invoice","credit_note")';
+            // Pohledávky = vše kromě proforem + NEZAPLACENÉ NESPÁROVANÉ proformy
+            // (zálohovky bez dceřiného ostrého dokladu) — ty jsou reálný dluh.
+            // Dřív filtr proformy zcela vynechával (IN invoice,credit_note), takže
+            // nezaplacené zálohové faktury se v "nezaplacené" vůbec neukázaly.
+            // Spárovaná proforma se vynechá, dluh nese ostrý doklad. Zrcadlí dashboard
+            // (receivableDocTypeSql) a InvoiceAmountPolicy.
+            $where[] = "(i.invoice_type != 'proforma'"
+                . " OR NOT EXISTS (SELECT 1 FROM invoices ch"
+                . " WHERE ch.parent_invoice_id = i.id AND ch.invoice_type = 'invoice'))";
             // Finální daňový doklad k zaplacené proformě má amount_to_pay = 0 by design
             // (záloha pokryla celek) — není nezaplacený, jen status zůstal 'issued'.
-            // Dobropisy (záporný total) ponecháváme. Zrcadlí dashboard a InvoiceAmountPolicy.
+            // Dobropisy (záporný total) ponecháváme.
             $where[] = "(i.invoice_type NOT IN ('invoice','proforma') OR i.amount_to_pay > 0)";
         }
         if (!empty($filters['overdue'])) {
             $where[] = "i.status IN ('issued','sent','reminded') AND i.due_date <= CURDATE()";
+            // Stejná pohledávková sémantika jako unpaid (vč. nespárovaných proforem).
+            $where[] = "(i.invoice_type != 'proforma'"
+                . " OR NOT EXISTS (SELECT 1 FROM invoices ch"
+                . " WHERE ch.parent_invoice_id = i.id AND ch.invoice_type = 'invoice'))";
             $where[] = "(i.invoice_type NOT IN ('invoice','proforma') OR i.amount_to_pay > 0)";
         }
         if (!empty($filters['q'])) {
@@ -587,10 +599,15 @@ final class InvoiceRepository
             $cur = $row['currency'];
             if (!isset($grouped[$month]['totals_per_currency'][$cur])) {
                 $grouped[$month]['totals_per_currency'][$cur] = [
-                    'currency'    => $cur,
-                    'without_vat' => 0.0,
-                    'vat'         => 0.0,
-                    'with_vat'    => 0.0,
+                    'currency'        => $cur,
+                    'without_vat'     => 0.0,
+                    'vat'             => 0.0,
+                    'with_vat'        => 0.0,
+                    // Predikce: koncepty (draft) vystavených faktur/dobropisů – ještě nejsou
+                    // obratem, ale ukazují, kolik je „rozpracováno" k vystavení v daném měsíci.
+                    'draft_without_vat' => 0.0,
+                    'draft_vat'         => 0.0,
+                    'draft_with_vat'    => 0.0,
                 ];
             }
             // Do obratu počítáme jen vystavené faktury + dobropisy (credit_note má záporné částky → odečte se).
@@ -600,15 +617,24 @@ final class InvoiceRepository
                 $grouped[$month]['totals_per_currency'][$cur]['without_vat'] += $row['total_without_vat'];
                 $grouped[$month]['totals_per_currency'][$cur]['vat']         += $row['total_vat'];
                 $grouped[$month]['totals_per_currency'][$cur]['with_vat']    += $row['total_with_vat'];
+            } elseif ($row['status'] === 'draft'
+                && in_array($row['invoice_type'], ['invoice', 'credit_note'], true)) {
+                // Koncepty do samostatné „predikce" (sčítají se k obratu až na FE pro predikovaný součet).
+                $grouped[$month]['totals_per_currency'][$cur]['draft_without_vat'] += $row['total_without_vat'];
+                $grouped[$month]['totals_per_currency'][$cur]['draft_vat']         += $row['total_vat'];
+                $grouped[$month]['totals_per_currency'][$cur]['draft_with_vat']    += $row['total_with_vat'];
             }
         }
 
         // Round totals
         foreach ($grouped as &$m) {
             foreach ($m['totals_per_currency'] as &$t) {
-                $t['without_vat'] = round($t['without_vat'], 2);
-                $t['vat']         = round($t['vat'], 2);
-                $t['with_vat']    = round($t['with_vat'], 2);
+                $t['without_vat']       = round($t['without_vat'], 2);
+                $t['vat']               = round($t['vat'], 2);
+                $t['with_vat']          = round($t['with_vat'], 2);
+                $t['draft_without_vat'] = round($t['draft_without_vat'], 2);
+                $t['draft_vat']         = round($t['draft_vat'], 2);
+                $t['draft_with_vat']    = round($t['draft_with_vat'], 2);
             }
             $m['totals_per_currency'] = array_values($m['totals_per_currency']);
         }
