@@ -512,6 +512,8 @@ final class Routes
         $app->post   ('/api/settings/email-branding/logo',            [EmailBrandingAction::class, 'uploadLogo']);
         $app->delete ('/api/settings/email-branding/logo',            [EmailBrandingAction::class, 'deleteLogo']);
         $app->get    ('/api/settings/email-branding/preview',         [EmailBrandingAction::class, 'preview']);
+        // CUSTOM(fork): logo aktuální firmy pro hlavičku SPA (fallback MyInvoice když 404)
+        $app->get    ('/api/branding/logo',                           \MyInvoice\Action\Branding\SupplierLogoAction::class);
 
         $app->get    ('/api/settings/units',                          [SettingsAction::class, 'listUnits']);
         $app->post   ('/api/settings/units',                          [SettingsAction::class, 'createUnit']);

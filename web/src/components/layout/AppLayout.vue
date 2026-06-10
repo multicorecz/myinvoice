@@ -21,6 +21,14 @@ const route = useRoute()
 const auth = useAuthStore()
 const supplierStore = useSupplierStore()
 
+// CUSTOM(fork): logo aktuální firmy v hlavičce; fallback na MyInvoice, když firma logo nemá (404).
+const supplierLogoError = ref(false)
+const supplierLogoUrl = computed(() => supplierStore.currentSupplierId
+  ? `/api/branding/logo?supplier_id=${supplierStore.currentSupplierId}`
+  : '')
+const showSupplierLogo = computed(() => !!supplierStore.currentSupplierId && !supplierLogoError.value)
+watch(() => supplierStore.currentSupplierId, () => { supplierLogoError.value = false })
+
 const mobileOpen = ref(false)
 const quickOpen = ref(false)
 const supportOpen = ref(false)
@@ -314,10 +322,20 @@ onMounted(async () => {
       <div class="h-14 px-4 flex items-center justify-between gap-3">
         <!-- Logo -->
         <RouterLink to="/" class="flex items-center gap-2.5 shrink-0" @click="mobileOpen = false">
-          <img src="/styles/logo.svg" alt="MyInvoice" class="w-8 h-8" />
-          <span class="text-sm font-semibold leading-tight select-none">
-            My<span class="text-primary-600">Invoice</span><span class="text-neutral-400 font-normal">.cz</span>
-          </span>
+          <!-- CUSTOM(fork): logo aktuální firmy; fallback na MyInvoice když firma logo nemá (404 → @error) -->
+          <img
+            v-if="showSupplierLogo"
+            :src="supplierLogoUrl"
+            alt=""
+            class="h-9 max-w-[160px] object-contain"
+            @error="supplierLogoError = true"
+          />
+          <template v-else>
+            <img src="/styles/logo.svg" alt="MyInvoice" class="w-8 h-8" />
+            <span class="text-sm font-semibold leading-tight select-none">
+              My<span class="text-primary-600">Invoice</span><span class="text-neutral-400 font-normal">.cz</span>
+            </span>
+          </template>
         </RouterLink>
 
         <!-- Pravá strana topbaru -->

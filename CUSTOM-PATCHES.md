@@ -50,3 +50,19 @@ porty upstream **datové** nuance (SK DPH, identifikovaná osoba) do našich bun
 
 **Migrace na upstream (kdyby dodělali):** flag OFF → mapping migrace
 `INSERT INTO <jejich_tabulka> SELECT … FROM user_supplier` (nebo rename) → revert háčků.
+
+## 5. Logo firmy v hlavičce SPA (místo „MyInvoice.cz")
+> Zobrazí `supplier.logo_path` aktuální firmy vlevo nahoře; když logo není → fallback MyInvoice.
+> Reuse stávajícího nahrávání loga (Nastavení → e-mail branding) + `SafeLogoPath`.
+
+**Nové soubory (0 konfliktů):**
+- `api/src/Action/Branding/SupplierLogoAction.php` — `GET /api/branding/logo` servíruje obrázek
+  aktuální firmy (scoped přes SupplierScope + náš SupplierAccess); bez loga → 404.
+
+**Háčky do upstreamu:**
+| Soubor | Změna |
+|---|---|
+| `api/src/Routes.php` | `+ $app->get('/api/branding/logo', SupplierLogoAction::class)` (1 řádek vedle email-branding rout) |
+| `web/src/components/layout/AppLayout.vue` | v topbaru `<img>` loga firmy s `@error` fallbackem na MyInvoice + 4 řádky ve `<script setup>` (`supplierLogoUrl`/`showSupplierLogo`/`supplierLogoError`) |
+
+**Opuštění:** smaž akci + route + revert bloku v AppLayout.vue → hlavička zpět na MyInvoice.cz.
