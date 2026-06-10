@@ -13,7 +13,8 @@ Soubory přepsané kompletně (náš redesign + dílčí upstream merge):
 - `styles/invoice.css` — celý redesign.
 - `api/templates/invoice/invoice.twig` — pay-band, party-h, meta-sep, UHRAZENO v pruhu.
 - `api/src/Service/Pdf/PdfBranding.php` — pay-band branding + bandLabel.
-- `api/src/Service/Pdf/InvoicePdfRenderer.php` — okraje 10mm (`margin_* => 10`).
+- `api/src/Service/Pdf/InvoicePdfRenderer.php` — okraje 10mm (`margin_* => 10`) + `logoDisplayBox()`
+  (fit-to-box rozměry loga `logo_w`/`logo_h` v mm — mPDF ignoruje max-width/max-height na `<img>`).
 
 Při merge: u konfliktů v `invoice.twig` (upstream aktivně vyvíjí) ponech NÁŠ layout meta-gridu,
 porty upstream **datové** nuance (SK DPH, identifikovaná osoba) do našich buněk.

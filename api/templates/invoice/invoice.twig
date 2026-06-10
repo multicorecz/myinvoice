@@ -23,13 +23,14 @@
     {% if logo_show_name and logo_path and logo_path is not empty %}
       {# Logo + název firmy: dvě SOUSEDNÍ buňky .head (žádná vnořená tabulka — ta v mPDF
          mazala spodní čáru hlavičky). Mezeru dělá pevná šířka buňky loga: mPDF na buňce
-         respektuje `width`, ne padding. #}
-      <td class="logo-img-cell"><img src="{{ logo_path }}" alt="logo"></td>
+         respektuje `width`, ne padding. Rozměry loga = server-side fit (logo_w/logo_h);
+         mPDF ignoruje max-width/max-height na <img>, proto explicitní width+height. #}
+      <td class="logo-img-cell"{% if logo_w %} style="width: {{ (logo_w + 5)|round(1) }}mm;"{% endif %}><img src="{{ logo_path }}" alt="logo" style="height: {{ logo_h }}mm;{% if logo_w %} width: {{ logo_w }}mm;{% endif %}"></td>
       <td class="logo-name">{{ supplier.display_name|default(supplier.company_name) }}</td>
     {% else %}
       <td class="logo">
         {% if logo_path and logo_path is not empty %}
-          <img src="{{ logo_path }}" alt="logo" style="max-width: 72mm; max-height: 20mm;">
+          <img src="{{ logo_path }}" alt="logo" style="height: {{ logo_h }}mm;{% if logo_w %} width: {{ logo_w }}mm;{% endif %}">
         {% else %}
           <div class="brand-name">{{ supplier.company_name }}</div>
         {% endif %}
@@ -447,13 +448,14 @@
     {% if logo_show_name and logo_path and logo_path is not empty %}
       {# Logo + název firmy: dvě SOUSEDNÍ buňky .head (žádná vnořená tabulka — ta v mPDF
          mazala spodní čáru hlavičky). Mezeru dělá pevná šířka buňky loga: mPDF na buňce
-         respektuje `width`, ne padding. #}
-      <td class="logo-img-cell"><img src="{{ logo_path }}" alt="logo"></td>
+         respektuje `width`, ne padding. Rozměry loga = server-side fit (logo_w/logo_h);
+         mPDF ignoruje max-width/max-height na <img>, proto explicitní width+height. #}
+      <td class="logo-img-cell"{% if logo_w %} style="width: {{ (logo_w + 5)|round(1) }}mm;"{% endif %}><img src="{{ logo_path }}" alt="logo" style="height: {{ logo_h }}mm;{% if logo_w %} width: {{ logo_w }}mm;{% endif %}"></td>
       <td class="logo-name">{{ supplier.display_name|default(supplier.company_name) }}</td>
     {% else %}
       <td class="logo">
         {% if logo_path and logo_path is not empty %}
-          <img src="{{ logo_path }}" alt="logo" style="max-width: 72mm; max-height: 20mm;">
+          <img src="{{ logo_path }}" alt="logo" style="height: {{ logo_h }}mm;{% if logo_w %} width: {{ logo_w }}mm;{% endif %}">
         {% else %}
           <div class="brand-name">{{ supplier.company_name }}</div>
         {% endif %}

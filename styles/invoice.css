@@ -39,9 +39,11 @@ body {
 }
 .head td { vertical-align: middle; padding-bottom: 4mm; }
 td.logo { width: 55%; }
-td.logo img { max-width: 60mm; max-height: 20mm; }
-td.logo-img-cell { width: 14mm; }
-td.logo-img-cell img { max-width: 13mm; max-height: 18mm; }
+/* Rozměry loga řídí inline style ze serveru (InvoicePdfRenderer::logoDisplayBox) —
+   mPDF ignoruje max-width/max-height na <img>, proto se emituje explicitní width+height
+   v mm. Šířka .logo-img-cell se taky posílá inline (logo_w + mezera); hodnota níže je
+   jen fallback pro SVG bez intrinsic rozměrů. */
+td.logo-img-cell { width: 24mm; }
 td.logo-name {
     white-space: nowrap;
     font-size: 14pt;

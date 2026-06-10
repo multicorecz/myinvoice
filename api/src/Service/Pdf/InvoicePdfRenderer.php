@@ -255,6 +255,9 @@ final class InvoicePdfRenderer
         }));
 
         $logoPath = $this->resolveLogoPath($supplierData, (int) ($invoice['supplier_id'] ?? 0));
+        // CUSTOM(fork): explicitní rozměry loga pro hlavičku — mPDF ignoruje max-width/
+        // max-height na <img>, takže fit-to-box počítáme server-side a emitujeme width+height.
+        [$logoW, $logoH] = $this->logoDisplayBox($logoPath);
 
         return $twig->render('invoice.twig', [
             'invoice'           => $invoice,
@@ -274,6 +277,8 @@ final class InvoicePdfRenderer
             'thousand_sep'      => $locale === 'en' ? ',' : ' ',
             'css'               => $css,
             'logo_path'         => $logoPath,
+            'logo_w'            => $logoW, // CUSTOM(fork): šířka loga v mm (null = SVG → jen výška)
+            'logo_h'            => $logoH, // CUSTOM(fork): výška loga v mm
             // Opt-in: vedle loga vykreslit i název firmy (migrace 0058). Jen když logo
             // reálně je — bez loga se název ukazuje vždy (textový brand-name fallback).
             'logo_show_name'    => $logoPath !== null && !empty($supplierData['pdf_logo_show_name']),
@@ -456,6 +461,35 @@ final class InvoicePdfRenderer
         $stmt = $this->db->pdo()->prepare('SELECT varsymbol FROM invoices WHERE id = ?');
         $stmt->execute([$invoice['parent_invoice_id']]);
         return $stmt->fetchColumn() ?: null;
+    }
+
+    /**
+     * CUSTOM(fork): rozměry loga pro PDF hlavičku v mm, fit do boxu se zachováním poměru.
+     * Důvod: mPDF ignoruje max-width/max-height na <img>, takže logo se jinak vykreslí
+     * v intrinsic velikosti (klidně přes půl stránky). Počítáme explicitní width+height,
+     * které mPDF respektuje.
+     *
+     * Raster (PNG/JPG) → oba rozměry z getimagesize. SVG/neznámé (getimagesize selže) →
+     * jen výška; šířku dopočítá mPDF z poměru SVG.
+     *
+     * @return array{0: ?float, 1: float}  [šířka_mm|null, výška_mm]
+     */
+    private function logoDisplayBox(?string $abs, float $maxWmm = 50.0, float $maxHmm = 18.0): array
+    {
+        if ($abs !== null) {
+            $info = @getimagesize($abs);
+            if ($info !== false && (int) $info[0] > 0 && (int) $info[1] > 0) {
+                $ratio = (float) $info[0] / (float) $info[1]; // w/h
+                $h = $maxHmm;
+                $w = $h * $ratio;
+                if ($w > $maxWmm) {
+                    $w = $maxWmm;
+                    $h = $w / $ratio;
+                }
+                return [round($w, 1), round($h, 1)];
+            }
+        }
+        return [null, $maxHmm];
     }
 
     private function resolveLogoPath(array $supplier, int $supplierIdFallback = 0): ?string
