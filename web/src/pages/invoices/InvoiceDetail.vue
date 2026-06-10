@@ -297,6 +297,22 @@ async function deleteAttachment(att: InvoiceAttachment) {
   }
 }
 
+// CUSTOM(fork): admin-only smazání jedné verze z historie PDF (inline popisky kvůli i18n konvenci forku)
+async function deletePdfVersion(p: { id: number; filename: string }) {
+  if (!invoice.value) return
+  const msg = locale.value === 'cs'
+    ? `Smazat tuto verzi PDF z historie?\n${p.filename}`
+    : `Delete this PDF version from history?\n${p.filename}`
+  if (!window.confirm(msg)) return
+  try {
+    await invoicesApi.deleteArchivedPdf(invoice.value.id, p.id)
+    pdfHistory.value = pdfHistory.value.filter(x => x.id !== p.id)
+    toast.success(locale.value === 'cs' ? 'Verze PDF smazána' : 'PDF version deleted')
+  } catch (e: any) {
+    toast.error(apiErrorMessage(e, locale.value === 'cs' ? 'Smazání se nezdařilo' : 'Delete failed'))
+  }
+}
+
 function pdfReasonLabel(reason: string): string {
   const map: Record<string, string> = {
     'sent': 'invoice.pdf_history.reason.sent',
@@ -1923,6 +1939,15 @@ async function updateApprovalStatus() {
               <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 0 0 3 3h10a3 3 0 0 0 3-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
               {{ t('common.download') }}
             </a>
+            <!-- CUSTOM(fork): mazání verze z historie PDF — jen admin -->
+            <button v-if="auth.isAdmin" type="button" @click="deletePdfVersion(p)"
+                    class="text-xs text-danger-500 hover:text-danger-600 cursor-pointer font-medium inline-flex items-center gap-1">
+              <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                <path stroke-linecap="round" stroke-linejoin="round"
+                      d="M10 11v6m4-6v6m1 5H9a2 2 0 0 1-2-2V7h10v13a2 2 0 0 1-2 2zM5 7h14l-1-3H6L5 7z"/>
+              </svg>
+              {{ locale === 'cs' ? 'Smazat' : 'Delete' }}
+            </button>
           </div>
         </li>
       </ul>

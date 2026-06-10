@@ -220,6 +220,33 @@ final class PdfArchiveService
         return $deleted;
     }
 
+    /**
+     * CUSTOM(fork): smaže JEDNU archivovanou verzi PDF (DB řádek `invoice_pdfs` + soubor).
+     * Scoped na invoice_id (ownership). Vrací true, když řádek existoval a byl smazán.
+     */
+    public function deleteArchiveEntry(int $archiveId, int $invoiceId): bool
+    {
+        $stmt = $this->db->pdo()->prepare(
+            'SELECT filename FROM invoice_pdfs WHERE id = ? AND invoice_id = ?'
+        );
+        $stmt->execute([$archiveId, $invoiceId]);
+        $filename = $stmt->fetchColumn();
+        if ($filename === false) {
+            return false; // neexistuje / nepatří téhle faktuře
+        }
+
+        $del = $this->db->pdo()->prepare('DELETE FROM invoice_pdfs WHERE id = ? AND invoice_id = ?');
+        $del->execute([$archiveId, $invoiceId]);
+
+        $supplierId = $this->resolveSupplierId($invoiceId);
+        $path = \MyInvoice\Infrastructure\Config\RuntimePaths::storage('invoices') . '/sup-' . $supplierId
+              . '/_archive/' . (string) $filename;
+        if (is_file($path)) {
+            @unlink($path);
+        }
+        return true;
+    }
+
     private function resolveSupplierId(int $invoiceId): int
     {
         $stmt = $this->db->pdo()->prepare('SELECT supplier_id FROM invoices WHERE id = ?');

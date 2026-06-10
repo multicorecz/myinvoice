@@ -99,6 +99,7 @@ use MyInvoice\Action\Invoice\UnlinkAdvanceAction as UnlinkInvoiceAdvanceAction;
 use MyInvoice\Action\Invoice\PdfAction;
 use MyInvoice\Action\Invoice\ListPdfsAction;
 use MyInvoice\Action\Invoice\DownloadArchivedPdfAction;
+use MyInvoice\Action\Invoice\DeleteArchivedPdfAction; // CUSTOM(fork): admin-only mazání historie PDF
 use MyInvoice\Action\Invoice\Attachment\ListAttachmentsAction;
 use MyInvoice\Action\Invoice\Attachment\UploadAttachmentAction;
 use MyInvoice\Action\Invoice\Attachment\DeleteAttachmentAction;
@@ -263,6 +264,7 @@ final class Routes
         $app->get    ('/api/invoices/{id:[0-9]+}/pdf',       PdfAction::class);
         $app->get    ('/api/invoices/{id:[0-9]+}/pdfs',      ListPdfsAction::class);
         $app->get    ('/api/invoices/{id:[0-9]+}/pdfs/{archiveId:[0-9]+}', DownloadArchivedPdfAction::class);
+        $app->delete ('/api/invoices/{id:[0-9]+}/pdfs/{archiveId:[0-9]+}', DeleteArchivedPdfAction::class); // CUSTOM(fork): admin-only
         $app->get    ('/api/invoices/{id:[0-9]+}/attachments', ListAttachmentsAction::class);
         $app->post   ('/api/invoices/{id:[0-9]+}/attachments', UploadAttachmentAction::class);
         $app->get    ('/api/invoices/{id:[0-9]+}/attachments/{attId:[0-9]+}', DownloadAttachmentAction::class);

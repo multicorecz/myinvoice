@@ -67,3 +67,21 @@ porty upstream **datové** nuance (SK DPH, identifikovaná osoba) do našich bun
 | `web/src/components/layout/AppLayout.vue` | v topbaru `<img>` loga firmy s `@error` fallbackem na MyInvoice + 4 řádky ve `<script setup>` (`supplierLogoUrl`/`showSupplierLogo`/`supplierLogoError`) |
 
 **Opuštění:** smaž akci + route + revert bloku v AppLayout.vue → hlavička zpět na MyInvoice.cz.
+
+## 6. Admin-only mazání historie PDF u faktur
+> Smazání jedné archivované verze PDF z historie faktury. **Pouze admin** — guard přímo
+> v Action (RoleMiddleware `'* /api/invoices'` pouští i účetního, takže admin-only řešíme tady).
+
+**Nové soubory (0 konfliktů):**
+- `api/src/Action/Invoice/DeleteArchivedPdfAction.php` — `DELETE /api/invoices/{id}/pdfs/{archiveId}`,
+  guard `role === 'admin'` + SupplierGuard + scoped delete.
+
+**Háčky do upstreamu:**
+| Soubor | Změna |
+|---|---|
+| `api/src/Service/Pdf/PdfArchiveService.php` | `+ deleteArchiveEntry(archiveId, invoiceId)` (smaže DB řádek + soubor) |
+| `api/src/Routes.php` | `+ $app->delete('/api/invoices/{id}/pdfs/{archiveId}', …)` + use import |
+| `web/src/api/invoices.ts` | `+ deleteArchivedPdf(id, archiveId)` |
+| `web/src/pages/invoices/InvoiceDetail.vue` | `deletePdfVersion()` + tlačítko Smazat v historii PDF `v-if="auth.isAdmin"` (inline popisky) |
+
+**Opuštění:** smaž akci + route + `deleteArchiveEntry` + FE tlačítko/handler/api.

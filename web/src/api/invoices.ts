@@ -408,6 +408,10 @@ export const invoicesApi = {
     return `/api/invoices/${id}/pdfs/${archiveId}${qs ? '?' + qs : ''}`
   },
 
+  // CUSTOM(fork): admin-only smazání jedné archivované verze PDF z historie
+  deleteArchivedPdf: (id: number, archiveId: number) =>
+    api.delete<{ deleted: true }>(`/invoices/${id}/pdfs/${archiveId}`).then(r => r.data),
+
   send: (id: number, payload?: { to?: string[]; cc?: string[]; bcc?: string[]; subject_override?: string | null; note?: string }) =>
     api.post<{ sent_to: string[]; cc: string[]; bcc: string[]; sent_at: string; is_test: false }>(
       `/invoices/${id}/send`,
