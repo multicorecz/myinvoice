@@ -5,6 +5,33 @@ All notable changes to MyInvoice.cz are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.22.0] — 2026-06-11
+
+### Added
+
+- **Podpora formátu ISDOCX (ISDOC Package) ve všech importech (#136).** ISDOCX je ZIP balíček, do kterého řada účetních systémů zabaluje strukturovaný **ISDOC** i **čitelné PDF** faktury najednou. Dosud ho importy neuměly rozbalit a tiše spadly na AI extrakci nebo přeskočení. Nově ho přijmou **všechny** cesty: hromadný import (*Importy → Přijaté i Vystavené*), AI extrakce (*Externí integrace → AI*), nahrání faktury přímo v editoru přijaté faktury (drag & drop) i automatický **sken inbox** adresáře. Z balíčku se ISDOC vytáhne **deterministicky (zdarma, bez AI)** a vytvoří draft faktury, čitelné PDF se uloží pro náhled. Hlavní ISDOC se v balíčku určí podle `manifest.xml` (s fallbackem na `.isdoc` v kořeni archivu). Funguje i `.isdocx` **jako příloha uvnitř PDF/A-3**. Importy nově akceptují příponu `.isdocx` (uživatelé s vlastním `purchase_invoice.allowed_exts` v cfg.php si ji do seznamu doplní).
+
+### Fixed
+
+- **AI špatně rozpoznávala datumy na přijatých fakturách (zaměňovala datum vystavení, DUZP a splatnost).** AI extrakce neměla u datových polí v promptu žádné vodítko, takže role datumů odhadovala podle pozice na dokladu místo podle popisku — na produkci dala DUZP na datum splatnosti, jindy prohodila vystavení a splatnost. **DUZP (datum uskutečnění zdanitelného plnění) je přitom daňově zásadní** — rozhoduje o zařazení do období DPH. Nově prompt mapuje konkrétní české i slovenské popisky („Datum vystavení", „Datum uskut. zdaň. plnění" / „Datum zdanitelného plnění", „Datum splatnosti" …) na správná pole a uplatní logickou kontrolu (splatnost nikdy nepředchází vystavení). Navíc obranný mechanismus na straně serveru automaticky opraví prohozené datum vystavení ↔ splatnost.
+- **Po administrátorské opravě vystavené faktury (force-edit) zůstávalo přegenerované PDF se starými údaji stran (#135).** Force-edit uložil nová data faktury, ale JSON snapshoty stran (odběratel / dodavatel / banka) ponechal beze změny — a protože se u vystavených faktur PDF vykresluje právě z těchto snapshotů, oprava (např. adresy nebo IČO odběratele) se do nově vygenerovaného PDF nepromítla (ač to UI uživateli slibovalo). Nově se snapshoty při force-editu přepíšou z aktuálních dat; původní PDF zůstává v archivu. Historie faktury navíc u opravy uvádí, která konkrétní pole se změnila.
+
+## [4.21.1] — 2026-06-10
+
+### Fixed
+
+- **Variabilní symbol s pomlčkou (z čísla dokladu jako `2026-00001`) neprošel přes banku a kazil QR i párování plateb (#58).** Když dokladová řada obsahovala nečíselný znak (pomlčku/lomítko, např. řada `{YYYY}-{CCCCC}`), ukládal se takový variabilní symbol i do QR platby (SPAYD) — tu banka odmítá, protože VS musí být jen číslice — a automatické párování příchozích plateb (z výpisů i e-mailových avíz) ho nikdy nespárovalo, protože banka přenese jen číslice (`202600001`). Nově se VS pro platbu i QR vždy normalizuje na čistě číselný (max 10 znaků) a párování porovnává variabilní symbol **číselně** (ignoruje pomlčky, lomítka i vodicí nuly) na straně vydaných i přijatých faktur, takže se spárují i doklady s pomlčkou v čísle. V tištěné faktuře se v řádku *Var. symbol* zobrazuje platný číselný VS (velký titulek dokladu zůstává s pomlčkou).
+
+## [4.21.0] — 2026-06-10
+
+### Added
+
+- **„Zaplatit pomocí QR" u přijatých faktur.** V detailu nezaplacené přijaté faktury je nové tlačítko **Zaplatit pomocí QR**, které zobrazí QR platbu dodavateli pro naskenování v mobilním bankovnictví — CZK doklady ve formátu **QR Platba (SPAYD)**, cizoměnové jako **SEPA (EPC)**. Platební účet dodavatele se získává v pořadí: z **ISDOC** přílohy PDF → jednorázové **AI rozpoznání** z faktury (krátký dotaz na Anthropic Claude jen na účet/IBAN/variabilní symbol, spustí se automaticky při otevření okna a proběhne nejvýše jednou) → **ruční** zadání → záložní **obrázek QR vytažený z PDF** (čtvercový černobílý obrázek se zobrazí k naskenování i bez rozpoznání účtu). Známý účet se zobrazí i v **detailu** faktury (box vedle měny) a je editovatelný v **editoru** faktury (box *Platební účet dodavatele*) i přímo v okně QR. AI extrakce přijatých faktur nově platební účet rovnou ukládá.
+
+### Fixed
+
+- **Zahraniční DIČ s písmenem (např. nizozemské `NL123456789B01`) nešlo ověřit přes VIES.** Validace povolovala po prefixu země jen číslice (`/^[A-Z]{2}\d{4,12}$/`), takže DIČ s písmenem padalo na „DIČ musí mít prefix země a 4-12 číslic". Týkalo se i Rakouska (`ATU…`), Španělska, Francie a Irska. Nově se po prefixu země povolí 2-12 alfanumerických znaků, takže projdou všechny formáty DIČ ze systému VIES.
+
 ## [4.20.1] — 2026-06-09
 
 ### Fixed

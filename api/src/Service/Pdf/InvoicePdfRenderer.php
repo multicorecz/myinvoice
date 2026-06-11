@@ -10,6 +10,7 @@ use MyInvoice\Infrastructure\Config\Config;
 use MyInvoice\Infrastructure\Database\Connection;
 use MyInvoice\Repository\InvoiceRepository;
 use MyInvoice\Repository\WorkReportRepository;
+use MyInvoice\Service\Bank\VariableSymbolNormalizer;
 use MyInvoice\Service\Branding\AccentColor;
 use MyInvoice\Service\Export\IsdocExporter;
 use MyInvoice\Service\Invoice\SnapshotBuilder;
@@ -265,6 +266,10 @@ final class InvoicePdfRenderer
             'client'            => $clientData,
             'bank'              => $bankData,
             'qr_data_uri'       => $qrUri,
+            // Platební VS = jen číslice (max 10) — `varsymbol` může nést pomlčku z čísla
+            // dokladu, kterou banka nepřijme. Velký titulek dokladu zůstává s pomlčkou,
+            // ale do platebního řádku tiskneme validní VS (shodné s QR a párováním).
+            'payment_varsymbol' => VariableSymbolNormalizer::forPayment((string) ($invoice['varsymbol'] ?? '')),
             'is_paid'           => $isPaid,
             'payment_method'    => $paymentMethod,
             'locale'            => $locale,
@@ -568,6 +573,34 @@ final class InvoicePdfRenderer
             || !empty($invoice['bank_snapshot']);
         if (!$hasAny) return $invoice;
 
+        return $this->writeSnapshots($invoice);
+    }
+
+    /**
+     * Přepíše snapshoty (supplier/client/bank) z aktuálních live dat — voláno při
+     * admin force-editu VYSTAVENÉ faktury, aby se opravené údaje stran (adresa/IČO/
+     * název odběratele, banka) promítly do nově generovaného PDF.
+     *
+     * Narozdíl od refreshSnapshots() (regenerate cesta, jen drafty) tahle metoda
+     * ZÁMĚRNĚ přepíše snapshot i u issued/sent/paid faktury — je to vědomá oprava
+     * dokladu, kterou UI uživateli avizuje („Změny přepíšou snapshoty"). Auditní
+     * stopu (kdo/kdy/co) zajišťuje volající přes ActivityLogger.
+     */
+    public function rebuildSnapshots(int $invoiceId): void
+    {
+        $invoice = $this->repo->find($invoiceId);
+        if ($invoice === null) return;
+        $this->writeSnapshots($invoice);
+    }
+
+    /**
+     * Postaví snapshoty z live dat a uloží do invoices. Sdílené jádro pro
+     * refreshSnapshots() (drafty) i rebuildSnapshots() (force-edit vystavené).
+     *
+     * @return array  invoice array s aktualizovanými snapshoty (in-memory)
+     */
+    private function writeSnapshots(array $invoice): array
+    {
         try {
             $built = $this->snapshots->build(
                 (int) $invoice['client_id'],

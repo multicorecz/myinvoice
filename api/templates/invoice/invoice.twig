@@ -216,7 +216,8 @@
       <div class="pb-gap">&nbsp;</div>
       <table class="pb-rows">
         {% if invoice.varsymbol %}
-        <tr><td class="pb-k">{{ t('Variabilní', 'Variable') }}</td><td class="pb-v">{{ invoice.varsymbol }}</td></tr>
+        {# payment_varsymbol = normalizovaný VS (upstream #58) — sedí s QR i bank matchingem. #}
+        <tr><td class="pb-k">{{ t('Variabilní', 'Variable') }}</td><td class="pb-v">{{ payment_varsymbol|default(invoice.varsymbol) }}</td></tr>
         {% endif %}
         <tr><td class="pb-k">{{ t('Konstantní', 'Constant') }}</td><td class="pb-v">0308</td></tr>
         {% if is_paid %}
