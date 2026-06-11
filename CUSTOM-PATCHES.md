@@ -32,6 +32,10 @@ porty upstream **datové** nuance (SK DPH, identifikovaná osoba) do našich bun
 
 **Nové soubory (0 konfliktů):**
 - `db/migrations/0107_user_supplier.sql` — tabulka `user_supplier` + grandfather.
+  > POZN.: upstream 4.22.0 přidal taky `0107_purchase_invoice_payment_account.sql` → dva soubory
+  > s prefixem 0107 koexistují. NEPŘEČÍSLOVÁVAT náš (už je aplikovaný; runner trackuje podle celého
+  > názvu). Re-apply by přes `INSERT IGNORE … CROSS JOIN` znovu udělil všem všechny firmy = rozbil
+  > by per-firma omezení. Příští naše migrace ber od 0108+.
 - `api/src/Access/SupplierAccess.php` — služba (allowedIds/canAccess, fail-open).
 - `api/src/Access/SupplierAccessMiddleware.php` — vynucení scope (po SupplierScope).
 - `web/src/pages/admin/...` — UI přiřazení firem (viz commit).
