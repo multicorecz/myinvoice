@@ -740,12 +740,12 @@ final class InvoiceRepository
         $sql = 'INSERT INTO invoices
             (invoice_type, parent_invoice_id, client_id, project_id, supplier_id,
              issue_date, tax_date, due_date, currency_id, reverse_charge, prices_include_vat, language,
-             note_above_items, note_below_items, advance_paid_amount, discount_percent, varsymbol,
+             note_above_items, note_below_items, order_number, advance_paid_amount, discount_percent, varsymbol,
              payment_method, status, vat_classification_code, revenue_category, revenue_category_id,'
             . ($hasExempt ? ' income_tax_exempt, income_tax_exempt_reason,' : '')
             . ($hasReminders ? ' auto_send_reminders,' : '')
             . ' created_by)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, "draft", ?, ?, ?,'
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, "draft", ?, ?, ?,'
             . ($hasExempt ? ' ?, ?,' : '')
             . ($hasReminders ? ' ?,' : '')
             . ' ?)';
@@ -765,6 +765,7 @@ final class InvoiceRepository
             (string) ($data['language'] ?? 'cs'),
             $data['note_above_items'] ?? null,
             $data['note_below_items'] ?? null,
+            self::normalizeOrderNumber($data['order_number'] ?? null), // CUSTOM(fork): číslo objednávky
             (float) ($data['advance_paid_amount'] ?? 0),
             self::clampDiscountPercent($data['discount_percent'] ?? 0),
             $manualVarsymbol,
@@ -828,7 +829,7 @@ final class InvoiceRepository
                 client_id = ?, project_id = ?,
                 issue_date = ?, tax_date = ?, due_date = ?,
                 currency_id = ?, reverse_charge = ?, prices_include_vat = ?, language = ?,
-                note_above_items = ?, note_below_items = ?,
+                note_above_items = ?, note_below_items = ?, order_number = ?,
                 advance_paid_amount = ?, discount_percent = ?,
                 vat_classification_code = ?, revenue_category = ?, revenue_category_id = ?'
               . ($hasExempt ? ', income_tax_exempt = ?, income_tax_exempt_reason = ?' : '')
@@ -850,6 +851,7 @@ final class InvoiceRepository
             (string) ($data['language'] ?? 'cs'),
             $data['note_above_items'] ?? null,
             $data['note_below_items'] ?? null,
+            self::normalizeOrderNumber($data['order_number'] ?? null), // CUSTOM(fork): číslo objednávky
             (float) ($data['advance_paid_amount'] ?? 0),
             self::clampDiscountPercent($data['discount_percent'] ?? 0),
             !empty($data['vat_classification_code']) ? (string) $data['vat_classification_code'] : null,
@@ -1037,6 +1039,16 @@ final class InvoiceRepository
             return null;
         }
         return mb_substr($s, 0, 190);
+    }
+
+    /** CUSTOM(fork): číslo objednávky — trim, null pokud prázdné, ořez na 50 znaků (DB VARCHAR(50)). */
+    private static function normalizeOrderNumber(mixed $value): ?string
+    {
+        $s = trim((string) ($value ?? ''));
+        if ($s === '') {
+            return null;
+        }
+        return mb_substr($s, 0, 50);
     }
 
     /**

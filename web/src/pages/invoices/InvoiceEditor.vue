@@ -156,6 +156,7 @@ const form = ref<{
   language: 'cs' | 'en'
   note_above_items: string
   note_below_items: string
+  order_number: string // CUSTOM(fork): číslo objednávky
   advance_paid_amount: number
   discount_percent: number
   payment_method: 'bank_transfer' | 'card' | 'cash' | 'other'
@@ -183,6 +184,7 @@ const form = ref<{
   language: 'cs',
   note_above_items: '',
   note_below_items: '',
+  order_number: '',
   advance_paid_amount: 0,
   discount_percent: 0,
   payment_method: 'bank_transfer',
@@ -406,6 +408,7 @@ onMounted(async () => {
       language: inv.language,
       note_above_items: inv.note_above_items ?? '',
       note_below_items: inv.note_below_items ?? '',
+      order_number: inv.order_number ?? '',
       advance_paid_amount: inv.advance_paid_amount,
       discount_percent: inv.discount_percent ?? 0,
       payment_method: inv.payment_method ?? 'bank_transfer',
@@ -1040,6 +1043,7 @@ async function submit() {
       language: form.value.language,
       note_above_items: form.value.note_above_items || null,
       note_below_items: form.value.note_below_items || null,
+      order_number: form.value.order_number.trim() || null,
       advance_paid_amount: form.value.advance_paid_amount,
       discount_percent: form.value.discount_percent || 0,
       payment_method: form.value.payment_method,
@@ -1359,6 +1363,14 @@ async function deleteDraft() {
             <div>
               <label class="block text-sm font-medium text-neutral-700 mb-1">{{ t('invoice.due_date') }} *</label>
               <input v-model="form.due_date" type="date" required class="w-full h-10 px-3 border border-neutral-300 rounded-md" />
+            </div>
+            <!-- CUSTOM(fork): číslo objednávky — per faktura, tiskne se v hlavičce PDF -->
+            <div>
+              <label class="block text-sm font-medium text-neutral-700 mb-1">{{ locale === 'cs' ? 'Číslo objednávky' : 'Order number' }}</label>
+              <input v-model="form.order_number" type="text" maxlength="50"
+                :placeholder="locale === 'cs' ? 'např. 2026110438' : 'e.g. 2026110438'"
+                class="w-full h-10 px-3 border border-neutral-300 rounded-md font-mono" />
+              <p class="text-xs text-neutral-500 mt-1">{{ locale === 'cs' ? 'Volitelné. Zobrazí se v hlavičce faktury.' : 'Optional. Shown in the invoice header.' }}</p>
             </div>
             <div v-if="form.invoice_type !== 'credit_note' && remindersAvailable">
               <label class="flex items-center gap-2 text-sm text-neutral-700">

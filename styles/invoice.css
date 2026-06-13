@@ -85,6 +85,12 @@ td.meta { width: 45%; text-align: right; }
     color: #808080;
     margin-top: 1mm;
 }
+/* CUSTOM(fork): číslo objednávky pod typem dokladu v hlavičce */
+.order-ref {
+    font-size: 9pt;
+    color: #595959;
+    margin-top: 1.5mm;
+}
 .isdoc-badge {
     display: inline-block;
     margin-top: 2mm;

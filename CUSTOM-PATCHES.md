@@ -89,3 +89,24 @@ porty upstream **datové** nuance (SK DPH, identifikovaná osoba) do našich bun
 | `web/src/pages/invoices/InvoiceDetail.vue` | `deletePdfVersion()` + tlačítko Smazat v historii PDF `v-if="auth.isAdmin"` (inline popisky) |
 
 **Opuštění:** smaž akci + route + `deleteArchiveEntry` + FE tlačítko/handler/api.
+
+## 7. Číslo objednávky na faktuře (`invoices.order_number`)
+> Per-faktura pole NEZÁVISLÉ na `project_number` (číslo navázaného projektu). Zadává se v editoru
+> (karta DATUMY) a tiskne se v hlavičce PDF pod typem dokladu.
+
+**Nové soubory (0 konfliktů):**
+- `db/migrations/0109_invoice_order_number.sql` — `ALTER TABLE invoices ADD COLUMN order_number`.
+
+**Háčky do upstreamu:**
+| Soubor | Změna |
+|---|---|
+| `api/src/Repository/InvoiceRepository.php` | `order_number` v `createDraft` INSERT + `updateDraft` SET + helper `normalizeOrderNumber()` (`find()` ho bere přes `i.*`) |
+| `api/src/Action/Invoice/UpdateInvoiceAction.php` | `'order_number'` v `diffFields()` (audit) |
+| `web/src/api/invoices.ts` | `order_number` v `Invoice` + `InvoicePayload` |
+| `web/src/pages/invoices/InvoiceEditor.vue` | form pole + input v kartě DATUMY (inline popisky) + load/save |
+| `api/templates/invoice/invoice.twig` | `.order-ref` v hlavičkové `.meta` buňce |
+| `styles/invoice.css` | `.order-ref` styl |
+
+**POZN.:** příští migrace ber od 0110 (0107 ×2, 0108 invoice_payments, 0109 order_number).
+
+**Opuštění:** `DROP COLUMN order_number` + revert háčků výše.

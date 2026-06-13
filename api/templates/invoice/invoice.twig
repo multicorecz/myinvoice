@@ -44,6 +44,10 @@
       {% if parent_varsymbol %}
         <div class="parent-ref">{{ t('k faktuře', 'to invoice') }} {{ parent_varsymbol }}</div>
       {% endif %}
+      {# CUSTOM(fork): číslo objednávky v hlavičce #}
+      {% if invoice.order_number %}
+        <div class="order-ref">{{ t('Číslo objednávky', 'Order number') }}: {{ invoice.order_number }}</div>
+      {% endif %}
       {% if isdoc_attachment %}
         {# Vizuální badge — samotný embedded ISDOC soubor přidává mPDF přes
            SetAssociatedFiles() v PDF/A-3 /AF + /Names /EmbeddedFiles. Klikatelná

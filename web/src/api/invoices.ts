@@ -107,6 +107,8 @@ export interface Invoice {
   language: 'cs' | 'en'
   note_above_items: string | null
   note_below_items: string | null
+  /** CUSTOM(fork): číslo objednávky (per faktura, nezávislé na project_number). */
+  order_number: string | null
   revenue_category_id: number | null
   revenue_category_label?: string | null
   revenue_category_code?: string | null
@@ -270,6 +272,7 @@ export interface InvoicePayload {
   language?: 'cs' | 'en'
   note_above_items?: string | null
   note_below_items?: string | null
+  order_number?: string | null // CUSTOM(fork): číslo objednávky
   advance_paid_amount?: number
   discount_percent?: number
   payment_method?: PaymentMethod
