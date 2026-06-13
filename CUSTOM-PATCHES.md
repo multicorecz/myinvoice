@@ -68,9 +68,12 @@ porty upstream **datové** nuance (SK DPH, identifikovaná osoba) do našich bun
 | Soubor | Změna |
 |---|---|
 | `api/src/Routes.php` | `+ $app->get('/api/branding/logo', SupplierLogoAction::class)` (1 řádek vedle email-branding rout) |
+| `api/src/Middleware/RoleMiddleware.php` | `+ 'GET #^/api/branding/logo$#'` v `READONLY_RULES` — od 4.25.0 (security audit) už není blanket `GET *`, takže bez tohoto by účetní/readonly dostali admin-only 403 a logo by jim spadlo na fallback |
 | `web/src/components/layout/AppLayout.vue` | v topbaru `<img>` loga firmy s `@error` fallbackem na MyInvoice + 4 řádky ve `<script setup>` (`supplierLogoUrl`/`showSupplierLogo`/`supplierLogoError`) |
 
-**Opuštění:** smaž akci + route + revert bloku v AppLayout.vue → hlavička zpět na MyInvoice.cz.
+POZN.: `SupplierLogoAction` má `X-Content-Type-Options: nosniff` + CSP `sandbox` (logo může být SVG → XSS při přímé navigaci) — parita s upstream DownloadArchivedPdfAction/DocumentFileAction.
+
+**Opuštění:** smaž akci + route + READONLY_RULES řádek + revert bloku v AppLayout.vue → hlavička zpět na MyInvoice.cz.
 
 ## 6. Admin-only mazání historie PDF u faktur
 > Smazání jedné archivované verze PDF z historie faktury. **Pouze admin** — guard přímo

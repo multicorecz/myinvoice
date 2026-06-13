@@ -116,6 +116,9 @@ final class RoleMiddleware implements MiddlewareInterface
         'GET #^/api/document-folders(/|$)#',
         'GET #^/api/suppliers(/|$)#',
         'GET #^/api/search$#',
+        // CUSTOM(fork): logo aktuální firmy v hlavičce SPA — čtení obrázku, povoleno všem rolím
+        // (jinak by účetní/readonly dostali admin-only 403 → fallback na „MyInvoice.cz").
+        'GET #^/api/branding/logo$#',
         // Dashboardy / CRM / reporty / daňový optimalizátor (čtení)
         'GET #^/api/dashboard(/|$)#',
         'GET #^/api/crm(/|$)#',

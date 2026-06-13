@@ -66,6 +66,11 @@ final class SupplierLogoAction
         return $response
             ->withHeader('Content-Type', $mime)
             ->withHeader('Cache-Control', 'private, max-age=300')
+            // Defense-in-depth (parita s DownloadArchivedPdfAction/DocumentFileAction):
+            // nosniff + sandbox — logo může být SVG, které by při přímé navigaci na URL
+            // mohlo spustit vložený <script> (XSS). V <img> se neexekuuje, přímý GET ano.
+            ->withHeader('X-Content-Type-Options', 'nosniff')
+            ->withHeader('Content-Security-Policy', "default-src 'none'; sandbox")
             ->withStatus(200);
     }
 }
