@@ -5,6 +5,66 @@ All notable changes to MyInvoice.cz are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.27.2] — 2026-06-14
+
+### Changed
+
+- **Sjednocený toolbar v Knize jízd a Tankování.** Akční tlačítka (Export, Import, Nový záznam, Načíst z faktur) jsou nově uvnitř filtr-boxu zarovnaná doprava — filtry vlevo, akce vpravo v jednom ohraničeném panelu (na mobilu se zalomí pod sebe).
+
+## [4.27.1] — 2026-06-14
+
+### Fixed
+
+- **Kniha jízd: role „jen čtení" viděla zápisová tlačítka.** V záložkách Automobily, Kniha jízd, Tankování a Kategorie cest se uživateli s rolí *readonly* zobrazovala tlačítka „Nový/Nové…", Import, Upravit, Smazat, „Načíst z faktur" i „Vytěžit historii", přestože je server (RBAC) stejně odmítal. Nově je UI skrývá — readonly má jen pohled a exporty (XLSX/PDF zůstávají dostupné).
+
+### Added
+
+- **Našeptávání míst „Odkud" / „Kam"** v novém záznamu jízdy — pole nabízejí dříve zadaná místa (stejně jako už účel cesty).
+- **Souhrny: druhý graf „Kumulativní km YTD".** Vedle sloupcového grafu najetých km po měsících přibyl čárový graf s nabíhajícím součtem km od začátku roku, letošní vs. minulý rok (styl jako *Kumulativní zisk YTD* na CRM dashboardu).
+
+### Changed
+
+- **Sjednocení vzhledu filtrů.** Filtry v Knize jízd a Tankování jsou nově v ohraničeném boxu jako v ostatních přehledech (faktury).
+- **Manuál: kapitoly Dokumenty a Kniha jízd dostaly v nadpisu pořadové číslo** (25., 26.) — sjednoceno se zbytkem manuálu.
+
+## [4.27.0] — 2026-06-14
+
+### Added
+
+- **Kniha jízd (nový modul pod *Dokumenty*).** Kompletní daňová evidence vozidel, jízd a tankování na pěti záložkách:
+  - **Automobily** — číselník vozidel (SPZ, značka/model, typ paliva, počáteční stav tachometru, výchozí vozidlo). Auto s navázanými jízdami nebo tankováním nelze smazat (chrání historii).
+  - **Kniha jízd** — evidence jízd (datum, čas, odkud→kam, účel, tachometr od/do, ujeté km, kategorie). Tachometr zahájení se předvyplní posledním známým stavem, ujeté km a koncový stav se dopočítávají obousměrně, účel cesty našeptává dříve zadané hodnoty. **Import z CSV i XLSX** (mapování hlaviček CZ/EN, dopočet vzdálenosti, zakládání chybějících kategorií, dry-run náhled), **export do XLSX a PDF**.
+  - **Tankování** — ruční záznam nebo **automatické vytěžení z přijatých faktur** od dodavatelů označených jako „benzínka". Detailní výpisy **Axigon** se rozpoznávají interním parserem (jednotlivá tankování, místo, množství, částka); na ostatní formáty a starší zhuštěné výpisy navazuje **AI fallback** (BYOK Anthropic klíč), s posledním záchytem v podobě souhrnného záznamu. Architektura parserů je rozšiřitelná — další tankovací společnost = nová třída, beze změny zbytku. Faktura se vytěžuje **jen jednou, ale i zpětně** (jednorázové vytěžení historie), idempotentně bez duplicit.
+  - **Souhrny** — daňové a účetní přehledy za rok: poměr služebních/soukromých km (krácení), roční stav tachometru **počítaný z jízd**, spotřeba l/100 km, kontrola návaznosti tachometru (s detailem skoků), informativní srovnání s paušálem na dopravu a **graf najetých km po měsících proti minulému roku**. Export do XLSX a PDF.
+
+  Tankování je čistě evidenční vrstva nad přijatou fakturou — náklad i DPH účtuje faktura, kniha jízd je jen rozpadá na jízdy a vozidla, takže nevstupuje do žádných statistik ani daňových výstupů dvakrát. Modul je dostupný i přes veřejné REST API (`/api/v1/logbook/*`). Účetní má plný přístup, role „jen čtení" vidí a exportuje.
+
+## [4.26.2] — 2026-06-14
+
+### Fixed
+
+- **Cizoměnová přijatá faktura v Pohoda XML měla souhrn `homeCurrency` v měně dokladu místo v CZK.** Tuzemský souhrn má být vždy v korunách, ale u přijatých faktur (které nemají předpočítanou CZK rekapitulaci jako vydané) nesl částky v cizí měně označené jako CZK. Nově se přepočtou kurzem na CZK. Cizoměnový blok `foreignCurrency` (měna, kurz, celková částka) byl v pořádku už předtím. **Vydaných faktur se to netýkalo** — ty mají CZK rekapitulaci počítanou kurzem ČNB po jednotlivých sazbách.
+
+## [4.26.1] — 2026-06-14
+
+### Fixed
+
+- **Dokončení opravy exportu přijatých faktur (návaznost na 4.26.0).** Rekapitulace DPH se mezi databází a exportérem klíčovala odlišně (`vat_rate`/`without_vat` u přijatých vs. `rate`/`base` u vydaných), takže souhrn v Pohoda XML (`homeCurrency`) i ISDOC (`TaxTotal` / `LegalMonetaryTotal`) u přijatých faktur vycházel **nulový** a klasifikace DPH spadla na `UNX` / `nonSubsume` (osvobozeno) místo skutečné sazby. Nově se rozpis přemapuje na kanonický tvar — souhrn i rekapitulace nesou správné základy, daň i sazby. **Vydaných faktur se tento problém netýkal** (jejich rozpis byl klíčovaný správně).
+- **Členění DPH u přijatých faktur.** Pohoda export už přijaté faktuře nevnucuje výstupní (uskutečněné) členění DPH typu `UDA5` — to je nejen špatný směr (u přijaté faktury jde o vstupní DPH / nárok na odpočet), ale i kód specifický pro konkrétní instalaci Pohody. Posílá se jen typ plnění (`inland` / `nonSubsume`) a správné členění pro agendu *přijatá faktura* doplní Pohoda. U zálohové/proforma faktury se `classificationVAT` neposílá vůbec (schéma ho pro zálohy nepoužívá).
+- **Evidenční číslo a variabilní symbol přijaté faktury v Pohodě.** Přijatá faktura už nevnucuje číslo dokladu dodavatele do naší číselné řady (`numberRequested` s `checkDuplicity` → import padal na duplicitě, navíc u nečíselného čísla šlo o špatný typ pole) — interní číslo přidělí Pohoda z agendy přijatých faktur. Variabilní symbol se navíc normalizuje na číselný tvar (max 10 číslic, stejně jako pro banku a QR), aby prošel platebním stykem. Doplněn integrační test exportu přijatých faktur nad reálnými daty (XSD validace + nenulová rekapitulace).
+
+## [4.26.0] — 2026-06-14
+
+### Fixed
+
+- **Export přijatých faktur do Pohoda XML byl nevalidní vůči oficiálnímu schématu Stormware a konektory ho odmítaly.** Přijatá faktura se exportovala jako *vydaná* — `invoiceType` byl `issuedInvoice` místo `receivedInvoice` a v `partnerIdentity` byl uveden příjemce (vaše firma) místo dodavatele. Hromadný export navíc obaloval každou fakturu do vlastního `<dataPack>`, takže uvnitř `<dataPackItem>` vznikal zanořený `<dataPack>`. Nově se přijaté faktury exportují korektně (`receivedInvoice` / `receivedAdvanceInvoice` / `receivedCreditNotice`, partner = dodavatel) a celé období je v jednom plochém `<dataPack>` s jednou položkou na fakturu.
+- **Rekapitulace DPH a souhrnné částky v Pohoda i ISDOC exportu přijatých faktur byly nulové.** Adaptér přijaté faktury nepředával rozpis DPH ani součty, takže `invoiceSummary` (Pohoda) i `TaxTotal` / `LegalMonetaryTotal` (ISDOC) vycházely prázdné. Nově nesou skutečné hodnoty.
+- **Pohoda export (vydaných i přijatých faktur) neprocházel XSD validací kvůli měnovým blokům souhrnu.** `homeCurrency` obsahoval nepovolený `priceSum` a zaokrouhlení `round` jako prostou hodnotu (schéma vyžaduje strukturu `priceRound`); `foreignCurrency` nesl per-sazbové mezisoučty, které do něj nepatří. Opraveno. Daňový doklad k přijaté platbě se navíc už neexportuje s neexistujícím typem `issuedTaxDocument`, ale jako běžná vydaná faktura (`issuedInvoice`).
+
+### Added
+
+- **Validace exportu proti oficiálním schématům.** Do repozitáře přibyla schémata Pohoda (`api/xsd/pohoda/`) a sada testů, které generované XML pro vydané i přijaté faktury validují proti `invoice.xsd` (Pohoda) a `isdoc-invoice-6.0.2.xsd` (ISDOC).
+
 ## [4.25.0] — 2026-06-12
 
 ### Security
