@@ -110,6 +110,8 @@ POZN.: `SupplierLogoAction` má `X-Content-Type-Options: nosniff` + CSP `sandbox
 | `api/templates/invoice/invoice.twig` | `.order-ref` v hlavičkové `.meta` buňce |
 | `styles/invoice.css` | `.order-ref` styl |
 
-**POZN.:** příští migrace ber od 0110 (0107 ×2, 0108 invoice_payments, 0109 order_number).
+**POZN.:** příští migrace ber od **0110**. Sdílené prefixy s upstreamem (koexistují, runner trackuje
+podle celého názvu — NEPŘEČÍSLOVÁVAT už aplikované): `0107` (user_supplier + vat_classifications),
+`0109` (invoice_order_number + logbook). `0108` = upstream invoice_payments.
 
 **Opuštění:** `DROP COLUMN order_number` + revert háčků výše.
