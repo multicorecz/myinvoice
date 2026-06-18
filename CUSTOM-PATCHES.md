@@ -19,6 +19,13 @@ Soubory přepsané kompletně (náš redesign + dílčí upstream merge):
 Při merge: u konfliktů v `invoice.twig` (upstream aktivně vyvíjí) ponech NÁŠ layout meta-gridu,
 porty upstream **datové** nuance (SK DPH, identifikovaná osoba) do našich buněk.
 
+**Fonty (od merge 4.35.1):** přebíráme upstream typografii — `MpdfFontConfig.php` registruje
+**Montserrat** (`DEFAULT_FONT`) + **JetBrains Mono** (číselné pasáže), DejaVu Sans zůstává jen jako
+`backupSubsFont` pro symboly; **DejaVu Sans Mono už NENÍ registrováno** (maže ho `cleanup-mpdf-fonts.php`).
+V `invoice.css` proto piš `font-family: 'jetbrainsmono', 'DejaVu Sans Mono', monospace` (NE jen DejaVu).
+Patička dokladu je upstream markup (`.footer-name`/`.footer-dot`/`.footer-link`) — při dalších merzích
+ber upstream stranu fontů/patičky, náš zůstává jen LAYOUT (pay-band, meta-grid, `.order-ref`, party-h).
+
 ## 2. Přehled faktur — přepínač seznam ↔ po měsících
 - `web/src/pages/invoices/InvoiceList.vue` — `groupByMonth` toggle + `displayGroups` (plochá skupina).
   Popisky inline podle locale (bez zásahu do i18n).
@@ -110,8 +117,9 @@ POZN.: `SupplierLogoAction` má `X-Content-Type-Options: nosniff` + CSP `sandbox
 | `api/templates/invoice/invoice.twig` | `.order-ref` v hlavičkové `.meta` buňce |
 | `styles/invoice.css` | `.order-ref` styl |
 
-**POZN.:** příští migrace ber od **0110**. Sdílené prefixy s upstreamem (koexistují, runner trackuje
-podle celého názvu — NEPŘEČÍSLOVÁVAT už aplikované): `0107` (user_supplier + vat_classifications),
-`0109` (invoice_order_number + logbook). `0108` = upstream invoice_payments.
+**POZN.:** příští migrace ber od **0113** (upstream 4.35.1 zabral `0110` logbook_fuel_liters_attempted,
+`0111` vat_classification_eu_service_line5, `0112` work_report_tracking). Sdílené prefixy s upstreamem
+(koexistují, runner trackuje podle celého názvu — NEPŘEČÍSLOVÁVAT už aplikované): `0107` (user_supplier +
+vat_classifications), `0109` (invoice_order_number + logbook). `0108` = upstream invoice_payments.
 
 **Opuštění:** `DROP COLUMN order_number` + revert háčků výše.
