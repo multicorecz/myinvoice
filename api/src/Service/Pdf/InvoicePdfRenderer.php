@@ -127,8 +127,8 @@ final class InvoicePdfRenderer
             'margin_left'       => 10,
             'margin_right'      => 10,
             'tempDir'           => $tmpDir,
-            'default_font'      => 'dejavusans',
             'autoPageBreak'     => true,
+            ...MpdfFontConfig::options(),
         ]);
         // PDF metadata — bez Title/Author, aby Chrome viewer nezobrazoval text nad PDF.
         $mpdf->SetTitle('');
@@ -540,7 +540,9 @@ final class InvoicePdfRenderer
                 return $svgAbs;
             }
         }
-        return $abs;
+        // PNG fallback: splácni alfa kanál na bílou — mPDF neumí SMask u truecolor
+        // RGBA PNG a vykreslil by průhledné pozadí černě (issue #152).
+        return PdfLogoFlattener::flattenedPath($abs);
     }
 
     /**

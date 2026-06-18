@@ -4363,6 +4363,7 @@ components:
         - health_assessment_pct
         - social_min_base_main
         - social_min_base_secondary
+        - social_secondary_participation_threshold
         - health_min_base
         - mortgage_cap
         - pension_cap
@@ -4387,6 +4388,7 @@ components:
         health_assessment_pct: { type: number }
         social_min_base_main: { type: number }
         social_min_base_secondary: { type: number }
+        social_secondary_participation_threshold: { type: number, description: Rozhodná částka (zisk) pro povinnou účast na důch. pojištění u vedlejší SVČ }
         health_min_base: { type: number }
         mortgage_cap: { type: number, description: Strop odpočtu úroků z hypotéky }
         pension_cap: { type: number }
@@ -6366,9 +6368,14 @@ components:
         odometer_end: { type: integer, nullable: true }
         fuel_count: { type: integer }
         liters: { type: number }
+        liters_count: { type: integer }
         liters_incomplete: { type: boolean }
+        kwh: { type: number, description: Charged energy (kWh) for electric/PHEV vehicles. }
+        kwh_count: { type: integer }
+        kwh_incomplete: { type: boolean }
         fuel_cost: { type: number }
-        avg_consumption: { type: number, nullable: true }
+        avg_consumption: { type: number, nullable: true, description: Fuel consumption l/100 km. }
+        avg_consumption_kwh: { type: number, nullable: true, description: Electric consumption kWh/100 km. }
         continuity_issues: { type: integer }
         continuity_detail:
           type: array
@@ -6395,7 +6402,10 @@ components:
         private_ratio: { type: number }
         fuel_count: { type: integer }
         liters: { type: number }
+        kwh: { type: number, description: Total charged energy (kWh). }
         fuel_cost: { type: number }
         avg_consumption: { type: number, nullable: true }
+        avg_consumption_kwh: { type: number, nullable: true }
         liters_incomplete: { type: boolean }
+        kwh_incomplete: { type: boolean }
         continuity_issues: { type: integer }

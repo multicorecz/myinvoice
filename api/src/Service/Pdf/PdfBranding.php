@@ -48,7 +48,9 @@ final class PdfBranding
                 return $svgAbs;
             }
         }
-        return $abs;
+        // PNG fallback: splácni alfa kanál na bílou — mPDF neumí SMask u truecolor
+        // RGBA PNG a vykreslil by průhledné pozadí černě (issue #152).
+        return PdfLogoFlattener::flattenedPath($abs);
     }
 
     /** True = supplier má logo, které lze v PDF zobrazit (pro gate `logo_show_name`). */
@@ -104,6 +106,8 @@ final class PdfBranding
             . ".isdoc-badge { color: {$color}; background: {$bgSoft}; border-color: {$badgeBorder}; }\n"
             . ".note { border-left-color: {$color}; }\n"
             . ".note.rc-note { border-left-color: #E8A547; }\n"
+            . ".footer { border-top-color: {$lineSoft}; }\n"
+            . ".footer-name { color: {$color}; }\n"
             . ".wr-title, .wr-link { color: {$color}; }\n";
     }
 }

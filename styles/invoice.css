@@ -6,10 +6,10 @@
    jsou to branding hooky. */
 
 body {
-    font-family: 'DejaVu Sans', sans-serif;
-    font-size: 9.5pt;
-    color: #1A1A1A;
-    line-height: 1.45;
+    font-family: 'montserrat', 'DejaVu Sans', sans-serif;
+    font-size: 10pt;
+    color: #15131D;
+    line-height: 1.4;
     margin: 0;
     padding: 0;
 }
@@ -75,8 +75,8 @@ td.meta { width: 45%; text-align: right; }
 .varsymbol-big {
     font-size: 22pt;
     font-weight: bold;
-    color: #1A1A1A;
-    font-family: 'DejaVu Sans Mono', monospace;
+    color: #15131D;
+    font-family: 'jetbrainsmono', 'DejaVu Sans Mono', monospace;
     line-height: 1.05;
     letter-spacing: -0.5pt;
 }
@@ -144,7 +144,7 @@ td.meta { width: 45%; text-align: right; }
     color: #1A1A1A;
 }
 .ic-dic {
-    font-family: 'DejaVu Sans Mono', monospace;
+    font-family: 'jetbrainsmono', 'DejaVu Sans Mono', monospace;
     font-size: 9pt;
     color: #595959;
     margin-top: 2mm;
@@ -180,7 +180,7 @@ td.meta-value {
     font-weight: normal;
     white-space: nowrap;
 }
-td.meta-value.mono { font-family: 'DejaVu Sans Mono', monospace; }
+td.meta-value.mono { font-family: 'jetbrainsmono', 'DejaVu Sans Mono', monospace; }
 
 /* Univerzální — zákaz wrap pro číselné buňky */
 .nowrap { white-space: nowrap; }
@@ -214,8 +214,8 @@ table.items td {
     border-bottom: 0.3pt solid #E6E6E6;
     vertical-align: top;
 }
-table.items tr:nth-child(even) td { background: #FAFAFA; }
-table.items .num { text-align: right; font-family: 'DejaVu Sans Mono', monospace; }
+table.items tr:nth-child(even) td { background: #FBFAFD; }
+table.items .num { text-align: right; font-family: 'jetbrainsmono', 'DejaVu Sans Mono', monospace; }
 table.items .center { text-align: center; }
 /* Slevový řádek odlišíme */
 table.items tr.discount-row td { color: #B5453F; font-style: italic; }
@@ -297,7 +297,7 @@ td.tot-label {
 }
 td.tot-num {
     text-align: right;
-    font-family: 'DejaVu Sans Mono', monospace;
+    font-family: 'jetbrainsmono', 'DejaVu Sans Mono', monospace;
     width: 38mm;
     font-weight: bold;
 }
@@ -364,7 +364,7 @@ table.czk-recap td.tot-label {
 }
 table.czk-recap td.tot-num {
     text-align: right;
-    font-family: 'DejaVu Sans Mono', monospace;
+    font-family: 'jetbrainsmono', 'DejaVu Sans Mono', monospace;
     width: 32mm;
     font-weight: bold;
 }
@@ -400,7 +400,7 @@ table.bank-frame td {
     line-height: 1.2;
 }
 .bank-value {
-    font-family: 'DejaVu Sans Mono', monospace;
+    font-family: 'jetbrainsmono', 'DejaVu Sans Mono', monospace;
     font-weight: bold;
     color: #1A1A1A;
     font-size: 9.5pt;
@@ -459,30 +459,41 @@ table.bank-frame td {
     font-weight: 600;
 }
 
-/* Footer */
-.commercial-register {
-    margin-top: 6mm;
-    margin-bottom: -4mm;
-    text-align: center;
-    font-size: 8pt;
-    color: #808080;
-    font-family: 'DejaVu Sans', sans-serif;
-}
+/* Footer — podpis dodavatele + zápis v OR */
 .footer {
-    margin-top: 6mm;
-    padding-top: 3mm;
-    border-top: 0.5pt solid #E6E6E6;
+    margin-top: 9mm;
+    padding-top: 3.5mm;
+    border-top: 0.6pt solid #E0DAF0;
     text-align: center;
-    font-size: 8pt;
-    color: #A6A6A6;
-    font-family: 'DejaVu Sans', sans-serif;
+    font-size: 8.5pt;
+    color: #6E6885;
+    font-family: 'montserrat', 'DejaVu Sans', sans-serif;
+    letter-spacing: 0.2pt;
+}
+.footer-name {
+    font-weight: 700;
+    color: #3B2D83;
+}
+.footer-dot {
+    color: #C5BFD3;
+}
+.footer a, .footer-link {
+    color: inherit;
+    text-decoration: none;
+}
+.commercial-register {
+    margin-top: 1.8mm;
+    text-align: center;
+    font-size: 7.5pt;
+    color: #A7A0BA;
+    font-family: 'montserrat', 'DejaVu Sans', sans-serif;
 }
 /* mPDF htmlpagefooter — attribution na patě KAŽDÉ stránky */
 .page-attribution {
     text-align: center;
     font-size: 7pt;
-    color: #C7C7C7;
-    font-family: 'DejaVu Sans', sans-serif;
+    color: #C5BFD3;
+    font-family: 'montserrat', 'DejaVu Sans', sans-serif;
 }
 .page-attribution a {
     color: #A6A6A6;

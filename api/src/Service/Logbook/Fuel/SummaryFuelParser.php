@@ -26,7 +26,9 @@ final class SummaryFuelParser implements FuelStatementParser
 
     public function parse(array $invoice, ?string $pdfBytes): ?array
     {
-        $issueDate = (string) ($invoice['issue_date'] ?? '');
+        // Datum plnění = DUZP (tax_date) → datum vystavení; bez transakčního data je DUZP nejblíž realitě.
+        $issueDate = (string) ($invoice['tax_date'] ?? '');
+        if ($issueDate === '') $issueDate = (string) ($invoice['issue_date'] ?? '');
         if ($issueDate === '') return null;
         $currency = (string) ($invoice['currency'] ?? 'CZK');
         $items = is_array($invoice['items'] ?? null) ? $invoice['items'] : [];
@@ -44,7 +46,7 @@ final class SummaryFuelParser implements FuelStatementParser
                 'fueled_time'        => null,
                 'fuel_type'          => mb_substr($desc, 0, 60),
                 'quantity'           => $qty,
-                'unit'               => (string) ($it['unit'] ?? 'l'),
+                'unit'               => FuelKeywords::canonicalUnit($it['unit'] ?? null, $desc),
                 'unit_price'         => isset($it['unit_price_without_vat']) ? (float) $it['unit_price_without_vat'] : null,
                 'amount_without_vat' => $base,
                 'amount_vat'         => $vat,
@@ -76,7 +78,7 @@ final class SummaryFuelParser implements FuelStatementParser
                 'fueled_time'        => null,
                 'fuel_type'          => $label,
                 'quantity'           => null,
-                'unit'               => 'l',
+                'unit'               => FuelKeywords::canonicalUnit(null, $label),
                 'unit_price'         => null,
                 'amount_without_vat' => isset($invoice['total_without_vat']) ? (float) $invoice['total_without_vat'] : null,
                 'amount_vat'         => isset($invoice['total_vat']) ? (float) $invoice['total_vat'] : null,
