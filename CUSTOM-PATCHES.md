@@ -123,3 +123,22 @@ POZN.: `SupplierLogoAction` má `X-Content-Type-Options: nosniff` + CSP `sandbox
 vat_classifications), `0109` (invoice_order_number + logbook). `0108` = upstream invoice_payments.
 
 **Opuštění:** `DROP COLUMN order_number` + revert háčků výše.
+
+## 8. Řádkové akce v seznamu faktur (inline flat ikony + „…" dropdown)
+> Sloupec „Akce" vpravo: hlavní akce jako inline solid (flat) ikony — Upravit (admin) / Exportovat do
+> PDF / Uhradit — + „…" tlačítko → dropdown menu s plnou nabídkou (Upravit / Odeslat / Exportovat do
+> PDF / Uhradit / Kopírovat) a oddělenou Smazat (admin). „Uhradit" jen u nezaplacené vystavené faktury.
+> Reuse endpointů clone/pdfUrl/send/markPaid/delete — žádné nové API.
+
+**Nové soubory (0 konfliktů):**
+- `web/src/components/invoices/InvoiceRowActions.vue` — inline flat ikony + „…" dropdown menu
+  teleportované do `<body>` s fixed pozicováním (neořezává tabulka; flip nahoru u spodních řádků;
+  zavírá klik mimo / Esc / scroll). Ikony solid (viewBox 20×20, fill). Gating `auth.canWrite` /
+  `auth.isAdmin`; po send/markPaid/delete emituje `changed` → parent refresh.
+
+**Háčky do upstreamu:**
+| Soubor | Změna |
+|---|---|
+| `web/src/pages/invoices/InvoiceList.vue` | import + `<th>` Akce + `<td>`/mobil `<InvoiceRowActions :invoice="inv" @changed="load()" />` |
+
+**Opuštění:** smaž komponentu + 3 řádky v InvoiceList.vue.
