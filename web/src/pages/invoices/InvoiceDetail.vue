@@ -471,7 +471,23 @@ function formatBytes(n: number): string {
   return (n / (1024 * 1024)).toFixed(2) + ' MB'
 }
 
-onMounted(load)
+// CUSTOM(fork): otevři dialog akce z query (?action=…) — proklik z řádkových akcí v seznamu
+// faktur, aby se použily TYTÉŽ dialogy jako v detailu (Odeslat/Uhradit/Částečná úhrada/Storno/Dobropis).
+function applyRouteAction() {
+  const a = route.query.action
+  if (typeof a !== 'string' || !invoice.value) return
+  const mode = route.query.mode
+  if (a === 'send') openSendModal()
+  else if (a === 'mark-paid') openMarkPaid()
+  else if (a === 'partial-payment') openPartialPayment()
+  else if (a === 'cancel') {
+    cancelMode.value = (mode === 'internal' || mode === 'credit_note') ? mode : (isCreditNoteSource.value ? 'internal' : 'credit_note')
+    cancelOpen.value = true
+  }
+  const q = { ...route.query }; delete q.action; delete q.mode
+  router.replace({ query: q })
+}
+onMounted(async () => { await load(); applyRouteAction() })
 // Detail se recykluje při navigaci /invoices/:id → :id (proklik na související doklad,
 // dobropis/parent) → onMounted se znovu nespustí, proto přenačtení řídí watch.
 watch(() => route.params.id, load)

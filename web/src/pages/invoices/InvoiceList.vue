@@ -16,6 +16,7 @@ import TableSkeleton from '@/components/ui/TableSkeleton.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
 import SearchableSelect from '@/components/ui/SearchableSelect.vue'
 import WorkReportModal from '@/components/modals/WorkReportModal.vue'
+import InvoiceRowActions from '@/components/invoices/InvoiceRowActions.vue' // CUSTOM(fork): řádkové akce
 
 const { t, tm, rt, locale } = useI18n()
 const toast = useToast()
@@ -663,6 +664,7 @@ const monthOptions = computed(() => (tm('common.months_short') as unknown as str
                 <th class="text-center px-4 py-2 font-medium">Splatnost</th>
                 <th class="text-right px-4 py-2 font-medium">{{ t('invoice.amount_to_pay') }}</th>
                 <th class="text-center px-4 py-2 font-medium">Stav</th>
+                <th class="text-right px-2 py-2 font-medium">{{ t('common.actions') }}</th>
               </tr>
             </thead>
             <tbody class="divide-y divide-neutral-100">
@@ -718,6 +720,10 @@ const monthOptions = computed(() => (tm('common.months_short') as unknown as str
                     :title="t('invoice.sent_at', { date: formatDate(inv.sent_at) })">✉</span>
                   <span v-if="inv.reminder_count > 0" class="ml-1 text-xs px-1 py-0.5 rounded bg-warning-50 text-warning-600 font-semibold"
                     :title="t('invoice.reminder_at', { count: inv.reminder_count, date: formatDate(inv.last_reminder_at) })">⚠ {{ inv.reminder_count }}</span>
+                </td>
+                <!-- CUSTOM(fork): sloupec akcí (ikony) -->
+                <td class="px-2 py-2.5 text-right" @click.stop>
+                  <InvoiceRowActions :invoice="inv" @changed="load()" />
                 </td>
               </tr>
             </tbody>
@@ -786,6 +792,8 @@ const monthOptions = computed(() => (tm('common.months_short') as unknown as str
                     <span v-else class="text-xs px-2 py-0.5 rounded" :class="statusBadgeClass(inv.status)">
                       {{ statusLabel(inv.status) }}
                     </span>
+                    <!-- CUSTOM(fork): řádkové akce (ikony) i na mobilu -->
+                    <InvoiceRowActions :invoice="inv" @changed="load()" />
                   </div>
                 </div>
               </div>

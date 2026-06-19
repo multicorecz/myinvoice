@@ -123,3 +123,37 @@ POZN.: `SupplierLogoAction` má `X-Content-Type-Options: nosniff` + CSP `sandbox
 vat_classifications), `0109` (invoice_order_number + logbook). `0108` = upstream invoice_payments.
 
 **Opuštění:** `DROP COLUMN order_number` + revert háčků výše.
+
+## 8. Řádkové akce v seznamu faktur (inline flat ikony + „…" dropdown)
+> Sloupec „Akce" vpravo: hlavní akce jako inline solid (flat) ikony — Upravit (admin) / Exportovat do
+> PDF / Uhradit — + „…" dropdown s plnou nabídkou: Upravit / Odeslat / Exportovat do PDF / Uhradit /
+> Částečná úhrada / Storno / Dobropis / Kopírovat + oddělená Smazat (admin).
+> - **Odeslat** = modal s příjemci (to/cc/bcc předvyplněné z `recipients()`) + poznámka → `send()`.
+> - **Uhradit** = modal s datem (default dnes) + poděkování → `markPaid(id, date, {sendThanks})`.
+> - **Částečná úhrada** = prompt na částku (předvyplněno zbývající) → `createPayment()`.
+> - **Storno / Dobropis** = `cancel(id, 'internal' | 'credit_note')`; dobropis naviguje do editoru.
+>
+> Uhradit/Částečná jen u nezaplacené; Storno/Dobropis jen u vystavené faktury/daň. dokladu. Reuse
+> endpointů clone/pdfUrl/send/recipients/markPaid/createPayment/cancel/delete — žádné nové API.
+
+**Same-as-detail dialogy:** akce s vyplňovacím dialogem (Odeslat/Uhradit/Částečná/Storno/Dobropis)
+NEduplikují UI — navigují na `/invoices/{id}?action=…[&mode=…]` a detail otevře TENTÝŽ dialog
+(`applyRouteAction()` v InvoiceDetail). Jednoduché akce (Upravit/PDF/Kopírovat/Smazat) běží přímo v listu.
+Ikony outline + barevný akcent per akce (paleta primary/accent/success/warning/danger).
+
+**Nové soubory (0 konfliktů):**
+- `web/src/components/invoices/InvoiceRowActions.vue` — inline outline ikony + „…" dropdown teleportované
+  do `<body>` (neořezává tabulka; flip nahoru; zavírá klik mimo/Esc/scroll). Gating canWrite/isAdmin.
+
+**Háčky do upstreamu:**
+| Soubor | Změna |
+|---|---|
+| `web/src/pages/invoices/InvoiceList.vue` | import + `<th>` Akce + `<td>`/mobil `<InvoiceRowActions :invoice @changed="load()" />` |
+| `web/src/pages/invoices/InvoiceDetail.vue` | `applyRouteAction()` — `onMounted` po `load()` otevře dialog dle `?action=` (send/mark-paid/partial-payment/cancel+mode) a vyčistí query |
+
+**Háčky do upstreamu:**
+| Soubor | Změna |
+|---|---|
+| `web/src/pages/invoices/InvoiceList.vue` | import + `<th>` Akce + `<td>`/mobil `<InvoiceRowActions :invoice="inv" @changed="load()" />` |
+
+**Opuštění:** smaž komponentu + 3 řádky v InvoiceList.vue.
