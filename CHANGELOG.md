@@ -5,6 +5,35 @@ All notable changes to MyInvoice.cz are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.37.2] — 2026-06-20
+
+### Changed
+
+- **Sjednocené akční lišty detailů (vydaná i přijatá faktura, klient, pravidelná fakturace, zakázka).** Přeplácané toolbary (detail vydané faktury jich měl až 12 v jedné řadě) nahradila jedna sdílená **lišta akcí** se třemi úrovněmi: hlavní akce podle stavu dokladu jako plné tlačítko (vystavit → uhradit → upomínka …), podpůrné akce vedle a zbytek v rozbalovacím menu **„Další akce"**. Méně časté, administrátorské a nevratné akce (test odeslání, úprava vystaveného dokladu, storno/dobropis, archivace …) jsou v menu navíc schované pod sbalitelným oddílem **„Pokročilé"**. Dosavadní samostatné **spodní panely akcí byly zrušeny** a jejich tlačítka přesunuta do tohoto menu — žádná akce nezmizela. Na **mobilu** zůstávají inline jen první dvě akce, zbytek je v menu; na desktopu se lišta nezalamuje. Tlačítko menu má vlastní vzhled pro světlý (decentní) i tmavý (výrazný) režim. Bez DB migrace.
+
+## [4.37.1] — 2026-06-20
+
+### Changed
+
+- **Sjednocený vzhled platební oblasti PDF faktury.** QR kód a blok „Bankovní spojení" jsou nově v **jednom podbarveném platebním panelu** (bez samostatného rámečku QR), barevně napojeném na branding dodavatele. Do bankovního spojení přibyl **variabilní symbol** a **název banky** (pokud je znám). U **zaplacené faktury** dostane panel jemný **zelený nádech** a jeho výška se srovná s blokem „Celkem" vpravo. Bloky **Dodavatel/Odběratel** jsou bez rámečků, jen s decentním podbarvením (Odběratel zvýrazněn akcentem palety). Popisek „QR Pay" odstraněn. Bez DB migrace.
+- **Výkaz materiálu u plátce DPH ukazuje souhrn „Celkem bez DPH" i „Celkem s DPH".** V PDF dokladu se u výkazu materiálu plátci nově tisknou obě sumy včetně sazby DPH výkazu; neplátce vidí jako dosud jediné „Celkem". Bez DB migrace.
+
+### Fixed
+
+- **Název banky v PDF se u některých vystavených faktur nezobrazoval.** Faktury vystavené dřív, než se název banky doplnil do číselníku měn, měly v bankovním snapshotu prázdný název a ten přebíjel živá data. Nově se prázdný název (a BIC) doplní z aktuálních dat, pokud jde o **stejný účet** (shodný kód banky / IBAN); historické číslo účtu zůstává ze snapshotu. Bez DB migrace.
+- **Patička PDF: „Krajského soudu v Plzni" se tisklo jako „v P zni".** Při velikosti písma 7,5 pt přebíjel kerning fontu Montserrat pár „Pl" tak, že písmeno „l" vizuálně zmizelo. Opraveno drobným prostrkáním textu spisové značky. Bez DB migrace.
+
+## [4.37.0] — 2026-06-19
+
+### Added
+
+- **Platební příkazy pro přijaté faktury (ABO/KPC, CSV, PDF)** (#150). Z nezaplacených přijatých faktur lze nově hromadně vygenerovat **příkaz k úhradě**. Pro koruny vzniká **ABO (KPC)** soubor pro import do internetbankingu, ostatní měny dostanou **CSV** (s BOM a ochranou proti CSV injection) nebo **PDF na šířku**. Účet plátce se volí podle měny a kandidáti se zobrazují ve dvou opticky odlišených tabulkách (CZK přes ABO vs. ostatní měny přes CSV/PDF). Účet příjemce lze **ověřit proti registru plátců DPH (CRPDPH)** — zveřejněné účty a nespolehlivost plátce, na vyžádání i automaticky — případně ručně doplnit či upravit, zobrazit QR k platbě nebo inline náhled dokladu. Stav „**Předáno k úhradě**" je odvozený příznak (`payment_ordered_at`), ne stav dokladu: má vlastní filtr i badge v seznamu přijatých faktur a při generování příkazu lze zvolit „jen označit" nebo „rovnou označit jako zaplacené" (jinak úhradu potvrdí až párování bankovního výpisu). Historie příkazů se ukládá se snapshotem a jde je znovu stáhnout (CSV/PDF/ABO). Nová kapitola manuálu **§ 20 „Platební příkazy"**. **Vyžaduje DB migraci** (0113: `payment_orders`, `payment_order_items`, `purchase_invoices.payment_ordered_at` + `payment_constant_symbol`, `supplier.abo_client_number`).
+- **Výkaz materiálu vedle Výkazu práce → 2 souhrnné položky na faktuře.** K výkazu faktury lze nově přidat druhý oddíl — **výkaz materiálu** (množství + MJ + cena za MJ místo hodin), který se na fakturu přenese jako druhá souhrnná položka „Materiál" vedle „Práce". Každý výkaz nese **vlastní sazbu DPH** (práce default 21 %, materiál default 12 %) a cena materiálu se zadává v cenové konvenci dokladu (s/bez DPH podle `prices_include_vat`). Materiál se promítá do PDF faktury i do dokladu ke schválení, do schvalovacích e-mailů a do veřejného sledovacího odkazu; „K vyúčtování" = práce + materiál. Editace probíhá v jednom modálním okně se dvěma sbalitelnými sekcemi. Manuál **§ 10.11**. **Vyžaduje DB migraci** (0114: `work_reports` + sazby DPH a souhrn materiálu, nová tabulka `work_report_materials`).
+
+### Fixed
+
+- **Daňové termíny na dashboardu respektují periodicitu DPH** (#156). Sekce „Akce pro tebe" generovala výzvu „DPH + KH za uplynulý měsíc" natvrdo k 25. dni aktuálního měsíce bez ohledu na zdaňovací období dodavatele — čtvrtletní plátci tak uprostřed kvartálu dostávali zavádějící měsíční daňovou akci. Nově se periodicita řeší správně: měsíční plátci beze změny, **čtvrtletní FO** dostanou sloučenou výzvu „DPH + KH za X. čtvrtletí" až po skončení kvartálu, **čtvrtletní PO** mají Kontrolní hlášení měsíčně (§ 101e) odděleně od čtvrtletního přiznání k DPH. Bez DB migrace.
+
 ## [4.36.0] — 2026-06-19
 
 ### Added

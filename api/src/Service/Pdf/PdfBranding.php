@@ -101,8 +101,6 @@ final class PdfBranding
             . "table.czk-recap td.czk-recap-title, table.czk-recap tr.grand td { color: {$color}; }\n"
             . "table.czk-recap td.czk-recap-title { border-bottom-color: {$lineMedium}; }\n"
             . "table.czk-recap tr.subtotal td { border-top-color: {$lineSoft}; }\n"
-            . "table.bank-frame { border-color: {$lineMedium}; }\n"
-            . ".qr-box { border-color: {$lineSoft}; }\n"
             . ".isdoc-badge { color: {$color}; background: {$bgSoft}; border-color: {$badgeBorder}; }\n"
             . ".note { border-left-color: {$color}; }\n"
             . ".note.rc-note { border-left-color: #E8A547; }\n"
