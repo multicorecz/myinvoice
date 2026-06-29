@@ -56,7 +56,16 @@ Každý dodavatel může mít více IMAP účtů, typicky jeden pro každou bank
 | Procházet | Ověří připojení a nabídne složky ze serveru |
 | Max. zpráv na běh | Kolik nejnovějších e-mailů cron načte při jednom běhu |
 | Zpracovat od data | Starší e-maily se ignorují i když spadnou do limitu |
+| Přijímat přeposlaná (FW) avíza | Rozpozná banku i z těla e-mailu, když avíza chodí do schránky přeposlaná (odesílatel je tvoje adresa, ne banka) |
+| E-mail přeposílatele | Volitelné omezení, od koho smí přeposlaná avíza chodit — adresa (`jan@firma.cz`) nebo doména (`firma.cz`); prázdné = libovolný |
 | Po úspěchu | Co udělat se zpracovanou zprávou |
+
+Pokud do schránky chodí avíza **přeposlaná** (např. z firemní schránky na sběrnou
+adresu), zapni **Přijímat přeposlaná (FW) avíza**. U přímého avíza poznává banku
+podle odesílatele, ale přeposláním se odesílatelem stáváš ty — proto se pak banka
+hledá i z těla e-mailu. Volitelně omez **E-mail přeposílatele**, ať se zpracují
+jen avíza od tvé adresy. Přeposláním zaniká původní podpis banky (DKIM), takže
+ověření autenticity se vztahuje na přeposílatele, ne na banku.
 
 Polling zprávy standardně **neoznačuje jako přečtené**. Systém si úspěšně
 zpracované e-maily pamatuje v databázi podle `Message-ID` / UID / fallback
@@ -71,8 +80,19 @@ Provider říká, jak poznat e-mail dané banky a jak z něj vytěžit platební
 
 Typy providerů:
 
-- **Systémový provider** — dodaný aplikací, např. Raiffeisenbank, UniCredit Bank, ČSOB, Česká spořitelna nebo Fio banka.
+- **Systémový provider** — dodaný aplikací, např. Raiffeisenbank, UniCredit Bank, ČSOB, Česká spořitelna, Fio banka nebo Banka CREDITAS.
 - **Regex provider** — vlastní provider dodavatele, konfigurovaný v UI.
+
+Systémový provider se přímo needituje (je společný pro všechny). Když ho chceš
+upravit, použij u něj tlačítko **Duplikovat** — vytvoří se editovatelná kopie,
+ve které si dolaď vzory a otestuj ji přes **Test parseru**. V mapování účtu pak
+přepneš účet z původního providera na svou kopii. Duplikovat lze i vlastní regex
+provider.
+
+Detekce e-mailu i vytěžení polí pracují **tolerantně k diakritice**: pokud avízo
+dorazí v jiném kódování nebo s rozbitou diakritikou (typicky u přeposlaných
+zpráv), vzory `Směr platby` a `Smer platby` se vyhodnotí stejně. Když přesto
+nějaký provider zlobí, můžeš si vzory napsat rovnou bez diakritiky.
 
 U regex provideru nastavuješ:
 

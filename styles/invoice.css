@@ -219,6 +219,9 @@ table.items .num { text-align: right; font-family: 'jetbrainsmono', 'DejaVu Sans
 table.items .center { text-align: center; }
 /* Slevový řádek odlišíme */
 table.items tr.discount-row td { color: #B5453F; font-style: italic; }
+/* DPH sloupec je užší (místo dostal Cena/j) — sazba „21 %" / „12,5 %" o stupínek
+   menší, aby se vešla bez zalomení. */
+table.items .vat { font-size: 8.5pt; }
 
 /* ─── PLATEBNÍ PRUH (přes celou šířku, mezi metadaty a položkami) ─── */
 /* Akcentní pruh à la iDoklad: bankovní spojení + symboly + QR. Pozn.: pozadí pruhu

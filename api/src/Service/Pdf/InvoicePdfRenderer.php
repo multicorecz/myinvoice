@@ -283,7 +283,10 @@ final class InvoicePdfRenderer
             'work_report'       => $this->workReports->findByInvoice((int) $invoice['id']),
             'date_format'       => $locale === 'en' ? 'M j, Y' : 'j. n. Y',
             'decimal_sep'       => $locale === 'en' ? '.' : ',',
-            'thousand_sep'      => $locale === 'en' ? ',' : ' ',
+            // Nezlomitelná mezera (NBSP, U+00A0) jako oddělovač tisíců — mPDF v úzkých
+            // číselných buňkách (Cena/j, Bez/S DPH) láme i přes white-space:nowrap; NBSP
+            // drží celé číslo „298 833,00" na jednom řádku spolehlivě.
+            'thousand_sep'      => $locale === 'en' ? ',' : "\u{00A0}",
             'css'               => $css,
             'logo_path'         => $logoPath,
             'logo_w'            => $logoW, // CUSTOM(fork): šířka loga v mm (null = SVG → jen výška)
