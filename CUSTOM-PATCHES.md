@@ -93,7 +93,7 @@ POZN.: `SupplierLogoAction` má `X-Content-Type-Options: nosniff` + CSP `sandbox
 **Háčky do upstreamu:**
 | Soubor | Změna |
 |---|---|
-| `api/src/Service/Pdf/PdfArchiveService.php` | `+ deleteArchiveEntry(archiveId, invoiceId)` (smaže DB řádek + soubor) |
+| `api/src/Service/Pdf/PdfArchiveService.php` | `+ deleteArchiveEntry(archiveId, invoiceId)` (smaže DB řádek + soubor). Cestu řeší upstream `archiveFilePath()` (měsíční shard od 4.39 + fallback na ploché `_archive`) — při merge ho v deleteArchiveEntry zachovej. |
 | `api/src/Routes.php` | `+ $app->delete('/api/invoices/{id}/pdfs/{archiveId}', …)` + use import |
 | `web/src/api/invoices.ts` | `+ deleteArchivedPdf(id, archiveId)` |
 | `web/src/pages/invoices/InvoiceDetail.vue` | `deletePdfVersion()` + tlačítko Smazat v historii PDF `v-if="auth.isAdmin"` (inline popisky) |
@@ -117,10 +117,16 @@ POZN.: `SupplierLogoAction` má `X-Content-Type-Options: nosniff` + CSP `sandbox
 | `api/templates/invoice/invoice.twig` | `.order-ref` v hlavičkové `.meta` buňce |
 | `styles/invoice.css` | `.order-ref` styl |
 
-**POZN.:** příští migrace ber od **0113** (upstream 4.35.1 zabral `0110` logbook_fuel_liters_attempted,
-`0111` vat_classification_eu_service_line5, `0112` work_report_tracking). Sdílené prefixy s upstreamem
-(koexistují, runner trackuje podle celého názvu — NEPŘEČÍSLOVÁVAT už aplikované): `0107` (user_supplier +
-vat_classifications), `0109` (invoice_order_number + logbook). `0108` = upstream invoice_payments.
+**POZN.:** příští migrace ber od **0124** (upstream zabral 0110–0122). Naše migrace: `0107_user_supplier`,
+`0109_invoice_order_number`, `0115_0_user_supplier_drop_fk`, `0123_user_supplier_supplier_id_int`. Sdílené
+prefixy s upstreamem koexistují (runner `sort(SORT_STRING)` podle celého názvu — NEPŘEČÍSLOVÁVAT aplikované):
+`0107`, `0109`, `0115` (náš `0115_0` se řadí PŘED upstream `0115_supplier_id_int`).
+
+**supplier_id → INT (od upstream 4.x, migrace 0115):** upstream rozšířil `supplier.id` z TINYINT na INT
+a dropuje/re-přidává jen SVÝCH 36 FK — naši `fk_us_supplier` (user_supplier) NEzná, takže by `MODIFY
+supplier.id INT` spadl. Řeší to náš pár: `0115_0_user_supplier_drop_fk.sql` (drop FK PŘED upstream 0115)
++ `0123_user_supplier_supplier_id_int.sql` (MODIFY supplier_id INT + re-add FK PO 0115). **Při dalším
+upstream rozšíření tenant klíče tohle zopakuj** (drop-before / readd-after pro `user_supplier`).
 
 **Opuštění:** `DROP COLUMN order_number` + revert háčků výše.
 
