@@ -5,6 +5,41 @@ All notable changes to MyInvoice.cz are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **iDoklad import — přijaté účtenky/paragony (`ReceivedReceipts`).** Import z iDokladu dosud stahoval jen `ReceivedInvoices` (přijaté faktury) a koncový bod `ReceivedReceipts` přeskakoval — přijaté účtenky/paragony se tak vůbec nepřenesly. Nově se importují do `purchase_invoices` s `document_kind='receipt'` (řídí se přes nový parametr `include_receipts`, default zapnuto). Mapování zohledňuje odlišnosti účtenky od faktury: účtenka nemá splatnost (`DateOfMaturity`) ani DUZP (`DateOfTaxing`) → `issue_date`/`tax_date`/`due_date` se odvodí z `DateOfIssue`, a číslo dokladu dodavatele je `ExternalDocumentNumber` (fallback `DocumentNumber`). Hotovostní účtenka bez kontaktu (`Partner` = null) se **naváže na sběrného systémového dodavatele „Hotovostní nákup (účtenka)"** (aby se náklad neztratil) a importuje se **bez nároku na odpočet DPH** (`vat_deduction='none'`) s upozorněním k doplnění dodavatele — u plátce tak nevzniká chybný odpočet, u neplátce je to bez dopadu. Dedup přes `idoklad_id` i `(vendor, číslo, datum)` zůstává — opakovaný import nepřidává duplicity. Položkové ceny i rekapitulace DPH se skládají z autoritativních per-řádkových `Prices` stejně jako u přijatých faktur (řeší i ceny s DPH na účtenkách). Účtenka je hrazená na místě, takže se importuje rovnou jako **zaplacená** (`paid_at` = datum vystavení), pokud iDoklad nevrátí konkrétnější stav úhrady.
+
+## [4.43.4] — 2026-07-01
+
+### Fixed
+
+- **Párování bankovního výpisu (GPC) — zaplacené faktury se nepřeskočí.** Vystavená faktura, která už byla označená jako zaplacená (`paid`, `paid_total` = plná částka), se při importu i automatickém přepárování porovnávala proti zbývajícímu dluhu (= 0), takže plná platba nikdy nesedla a faktura zůstala ve výpisu jako *Nespárováno*. Nově se u již zaplacené faktury porovnává proti celkové částce dokladu a transakce se na ni jen naváže (stav ani datum úhrady se nemění, nevzniká duplicitní platba). Projevovalo se zejména při re-importu téže platby nebo když byla úhrada zaznamenaná dřív (jiná transakce / ruční záznam).
+- **Párování — uhrazené zálohové faktury (proforma) se nyní spárují.** Uhrazená záloha s vystaveným (a taky vyrovnaným) finálním dokladem se nepárovala: matcher platbu vždy přesměroval na finál, který ovšem u uhrazené zálohy nese `k úhradě` = 0 (pohledávku i platbu drží proforma), takže se porovnávala proti nule. Přesměrování na finál teď proběhne jen když je co doplácet (finál nese otevřenou pohledávku nebo proforma ještě není uhrazená); u plně vyrovnané zálohy se potvrzující platba naváže přímo na proformu.
+- **Párování odchozích plateb — karetní/bez VS platby se párují jako v ruční nabídce.** Automatické párování odchozích (záporných) plateb na přijaté faktury dosud u plateb bez variabilního symbolu (typicky karetní — GitHub, Anthropic, Alza…) vyžadovalo shodu názvu protistrany a vynechávalo už zaplacené faktury, takže se nespárovaly, přestože je ruční nabídka kandidátů podle částky a data našla. Přibyla poslední záchrana: shoda podle **částky (±1 Kč / 4 % u cizí měny) a data (±14 dní)** včetně zaplacených faktur — spáruje se ale jen při **právě jednom** jednoznačném kandidátovi (jinak zůstane nespárováno k ruční kontrole; už spárované doklady se vylučují).
+
+## [4.43.3] — 2026-06-30
+
+### Added
+
+- **Uchování strojového zdroje přijaté faktury (ISDOC/ISDOCX) — důkazní stopa.** Při importu přijaté faktury ze strukturovaného zdroje (`.isdoc`, `.isdocx`, nebo ISDOC vložený v PDF/A-3) se nově **trvale archivuje originální strojově čitelný doklad** vedle vizuálního PDF. Originál (často digitálně podepsaný) má pro audit a kontrolu z FÚ při 10leté archivační lhůtě vyšší hodnotu než PDF render a umožňuje zpětnou rekonstrukci dat. V detailu přijaté faktury přibyla akce **„Zdrojový doklad (ISDOC)"** ke stažení (jen je-li zdroj uložený). Bajty se ukládají as-is — `.isdocx` se NErozbaluje (zachová podpis ZIP obálky), embedded ISDOC v PDF se uloží jako vytažené XML. Zápis je write-once (originál se nikdy nepřepíše). Pokrývá dávkový import i nahrání přes dropzone/AI. Formát-agnostické (`source_format`), takže příští zdroje (Pohoda XML / iDoklad / Fakturoid) půjdou doplnit bez další migrace. (migrace 0123)
+
+### Fixed
+
+- **Vygenerované PDF přijaté faktury („Náš PDF") nově zobrazuje zaokrouhlení.** Rekonstrukční PDF dokladu u faktur se zaokrouhlením ukazovalo v souhrnu jen „Celkem k úhradě" = základ + DPH, takže chybělo haléřové zaokrouhlení a částka k úhradě byla o haléře vedle skutečnosti. Nově se u dokladů se zaokrouhlením vypíše samostatný řádek **Zaokrouhlení** a „Celkem k úhradě" = celkem s DPH + zaokrouhlení (u dokladů bez zaokrouhlení beze změny).
+- **Import ISDOC u dokladů se zaokrouhlením — „k úhradě" nově sedí na doklad.** Přijatá faktura z ISDOC se zaokrouhlením „k úhradě" (typicky e-faktury z e-shopů) se dosud naimportovala s částkou k úhradě = přesný součet položek, takže `K úhradě` bylo o haléře vedle skutečné částky na dokladu (a nepárovalo se přesně s platbou v bance). Import nově čte z ISDOC `<LegalMonetaryTotal>/<PayableAmount>` a haléřový rozdíl uloží jako zaokrouhlení — stejně jako už dělá rozpoznávání z PDF přes AI. Příklad: doklad se základem+DPH 999,99 a zaokrouhlením +0,01 se nově naimportuje tak, že `K úhradě` = 1 000,00. Základ a DPH zůstávají nezměněné (správně pro přiznání DPH a kontrolní hlášení). Sémantika `amount_to_pay` se nemění — zaokrouhlení se i nadále vede mimo něj (pole *Zaokrouhlení*) a do „k úhradě" se promítá stejnou cestou jako u AI importu (QR, platební příkaz, PDF, UI).
+
+## [4.43.2] — 2026-06-29
+
+### Fixed
+
+- **OpenAPI — opravené cesty pravidelných fakturací (`/api/v1/recurring`).** Endpointy pravidelných fakturací byly v `openapi.yaml` zdokumentované dvakrát: jednou správně pod veřejnou cestou `/api/v1/recurring*` a jednou jako starší zbytek pod `/api/recurring*` (bez `/v1/` prefixu). Druhá varianta byla pro konzumenty veřejného API nepoužitelná (token na cestu bez `/v1/` odmítne ApiScopeMiddleware) a zároveň rozbíjela strojové parsování specifikace (`duplicated mapping key`). Stará kopie byla odstraněna, zůstává jediná korektní definice pod `/api/v1/`. Bez dopadu na běh aplikace (jen dokumentace API).
+
+### Changed
+
+- **Manuál — instalace nativní: stažení hotového balíčku místo buildu + sekce Aktualizace.** Kapitola *Instalace — Nativní* nově upozorňuje, že místo buildu ze zdrojáků (Composer + Node/pnpm) stačí stáhnout hotový **production bundle** z GitHub Releases (obsahuje `api/vendor/`, `web/dist/` i vyrenderovaný manuál) — přibyla sekce *4.6 Alternativa: hotový balíček (bez buildu)*. Doplněna i sekce *4.7 Aktualizace* (build ze zdrojáků vs. bundle) s odkazy na kapitolu Aktualizace.
+
 ## [4.43.1] — 2026-06-28
 
 ### Changed
