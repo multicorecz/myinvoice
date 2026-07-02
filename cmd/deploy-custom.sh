@@ -33,5 +33,18 @@ docker compose -f "$COMPOSE" up -d
 sleep 4
 docker exec "$CONTAINER" php api/bin/migrate.php
 
+# CUSTOM(fork): zapiš „upgrade result" pro stránku Aktualizace. Náš deploy = vlastní build
+# forku (ne appí self-upgrade), takže VersionService by tam jinak ukazoval starý výsledek.
+# Píše {DATA_DIR}/storage/upgrade-result.json (VersionService::upgradeResultPath) + maže
+# případný zaseknutý „upgrade probíhá" flag.
+docker exec "$CONTAINER" sh -c '
+  DIR="${MYINVOICE_DATA_DIR:-/var/www/html}"
+  mkdir -p "$DIR/storage"
+  VER="$(cat /var/www/html/VERSION 2>/dev/null | tr -d "[:space:]")"
+  NOW="$(php -r "echo date(DATE_ATOM);")"
+  printf "{\n    \"status\": \"applied\",\n    \"target_version\": \"%s\",\n    \"applied_at\": \"%s\",\n    \"message\": \"Nasazeno vlastním buildem forku (cmd/deploy-custom.sh).\"\n}\n" "$VER" "$NOW" > "$DIR/storage/upgrade-result.json"
+  rm -f "$DIR/storage/upgrade-requested.json"
+'
+
 echo "==> 4/4 Hotovo. Verze: $(docker exec "$CONTAINER" cat /var/www/html/VERSION 2>/dev/null)"
 docker ps --filter "name=$CONTAINER" --format "    {{.Names}}  {{.Status}}  ({{.Image}})"
