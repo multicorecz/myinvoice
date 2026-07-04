@@ -20,6 +20,10 @@ import { formatMoney, formatDate } from '@/composables/useFormat'
 import { useChartColors } from '@/composables/useTheme'
 import BalanceTrendChart from '@/components/charts/BalanceTrendChart.vue'
 
+// embedded = vykresleno jako záložky uvnitř BankPage.vue (Finance → Bankovní účty);
+// hlavičku a lištu záložek pak dodává obálka, aktivní tab řídí přes ?tab=.
+defineProps<{ embedded?: boolean }>()
+
 const { t } = useI18n()
 const toast = useToast()
 const route = useRoute()
@@ -36,6 +40,11 @@ const tab = ref<Tab>(initialTab())
 watch(tab, (v) => {
   if (route.query.tab !== v) router.replace({ query: { ...route.query, tab: v } })
   if (v === 'balances') loadBalances()
+})
+// Obrácený směr (embedded): přepnutí záložky v obálce mění jen ?tab= → propiš dovnitř.
+watch(() => route.query.tab, (q) => {
+  const v = String(q || '')
+  if ((VALID_TABS as string[]).includes(v) && tab.value !== v) tab.value = v as Tab
 })
 
 function tabLabel(tt: Tab): string {
@@ -132,6 +141,7 @@ const regexFieldDefinitions = [
   { key: 'constant_symbol', required: false },
   { key: 'message', required: false },
   { key: 'bank_ref', required: false },
+  { key: 'balance', required: false },
 ] as const
 type RegexFieldKey = typeof regexFieldDefinitions[number]['key']
 interface RegexProviderDraft {
@@ -688,7 +698,7 @@ async function deleteMessage(m: BankEmailProcessedMessage) {
 
 <template>
   <div>
-    <div class="mb-4">
+    <div v-if="!embedded" class="mb-4">
       <h1 class="text-2xl font-semibold">{{ t('bank_accounts.title') }}</h1>
       <p class="text-sm text-neutral-500 mt-0.5">{{ t('bank_accounts.subtitle') }}</p>
     </div>
@@ -696,8 +706,8 @@ async function deleteMessage(m: BankEmailProcessedMessage) {
     <div v-if="loading" class="text-sm text-neutral-500">{{ t('bank_accounts.loading') }}</div>
 
     <div v-else>
-      <!-- Záložky ve stylu Číselníků / admin/emails -->
-      <div class="border-b border-neutral-200 mb-4 flex gap-1 overflow-x-auto">
+      <!-- Záložky ve stylu Číselníků / admin/emails; v embedded režimu je dodává BankPage. -->
+      <div v-if="!embedded" class="border-b border-neutral-200 mb-4 flex gap-1 overflow-x-auto">
         <button v-for="tt in VALID_TABS" :key="tt"
           @click="tab = tt"
           class="cursor-pointer px-4 py-2 text-sm border-b-2 transition whitespace-nowrap"
@@ -853,7 +863,13 @@ async function deleteMessage(m: BankEmailProcessedMessage) {
                       <td class="px-3 py-2 text-right font-mono whitespace-nowrap text-neutral-600">
                         {{ a.current_balance_czk !== null ? formatMoney(a.current_balance_czk, 'CZK') : '—' }}
                       </td>
-                      <td class="px-3 py-2 text-xs whitespace-nowrap">{{ formatDate(a.statement_date) }}</td>
+                      <td class="px-3 py-2 text-xs whitespace-nowrap">
+                        {{ formatDate(a.statement_date) }}
+                        <span v-if="a.current_source === 'email_notice'" :title="t('bank_accounts.balances_source_email_hint')"
+                          class="ml-1 inline-flex items-center px-1.5 py-0.5 rounded bg-neutral-100 text-neutral-500 font-medium">
+                          {{ t('bank_accounts.balances_source_email') }}
+                        </span>
+                      </td>
                       <td class="px-3 py-2 text-right text-xs">{{ a.statement_count }}</td>
                     </tr>
                   </tbody>
@@ -880,7 +896,13 @@ async function deleteMessage(m: BankEmailProcessedMessage) {
                     <span class="font-mono font-semibold">{{ formatMoney(a.current_balance, a.code) }}</span>
                     <span v-if="a.current_balance_czk !== null && a.code !== 'CZK'" class="font-mono text-xs text-neutral-500">≈ {{ formatMoney(a.current_balance_czk, 'CZK') }}</span>
                   </div>
-                  <div class="text-xs text-neutral-500">{{ t('bank_accounts.balances_th_as_of') }}: {{ formatDate(a.statement_date) }}</div>
+                  <div class="text-xs text-neutral-500">
+                    {{ t('bank_accounts.balances_th_as_of') }}: {{ formatDate(a.statement_date) }}
+                    <span v-if="a.current_source === 'email_notice'" :title="t('bank_accounts.balances_source_email_hint')"
+                      class="ml-1 inline-flex items-center px-1.5 py-0.5 rounded bg-neutral-100 text-neutral-500 font-medium">
+                      {{ t('bank_accounts.balances_source_email') }}
+                    </span>
+                  </div>
                 </div>
                 <div class="p-3 flex items-baseline justify-between bg-neutral-50">
                   <span class="font-medium">{{ t('bank_accounts.balances_total_czk') }}</span>
@@ -1329,7 +1351,10 @@ async function deleteMessage(m: BankEmailProcessedMessage) {
                   <div class="font-mono text-xs truncate">{{ m.message_id || m.fallback_hash }}</div>
                   <div class="text-xs text-neutral-500 truncate">{{ m.sender }} · {{ m.subject }}</div>
                 </td>
-                <td class="px-3 py-2">{{ m.status }}<div v-if="m.error_message" class="text-xs text-danger-500">{{ m.error_message }}</div></td>
+                <td class="px-3 py-2">
+                  <span :class="m.matched ? 'text-success-600' : (['match_failed','parse_failed','security_rejected','postprocess_failed'].includes(m.effective_status || m.status) ? 'text-danger-500' : '')">{{ m.effective_status || m.status }}</span>
+                  <div v-if="m.error_message" class="text-xs text-danger-500">{{ m.error_message }}</div>
+                </td>
                 <td class="px-3 py-2">{{ m.provider_code || '—' }}</td>
                 <td class="px-3 py-2 font-mono text-xs">
                   {{ m.parsed_payload?.variable_symbol || '—' }}

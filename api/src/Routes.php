@@ -52,6 +52,7 @@ use MyInvoice\Action\Settings\PdfSigningDiagnosticsAction;
 use MyInvoice\Action\Settings\SettingsAction;
 use MyInvoice\Action\Settings\SignatureDocumentSelectionAction;
 use MyInvoice\Action\Settings\SigningProfilesAction;
+use MyInvoice\Action\Settings\SupplierInvoiceCounterAction;
 use MyInvoice\Action\Bank\BankEmailNoticeAction;
 use MyInvoice\Action\Bank\BankStatementAction;
 use MyInvoice\Action\Dashboard\SummaryAction;
@@ -516,6 +517,7 @@ final class Routes
         // Settings (M6) — aktuální supplier (z X-Supplier-Id)
         $app->get ('/api/settings/supplier',                [SettingsAction::class, 'getSupplier']);
         $app->put ('/api/settings/supplier',                [SettingsAction::class, 'updateSupplier']);
+        $app->put ('/api/settings/supplier/invoice-counter', SupplierInvoiceCounterAction::class);
         $app->get    ('/api/settings/email-profiles',       [EmailProfilesAction::class, 'list']);
         $app->post   ('/api/settings/email-profiles',       [EmailProfilesAction::class, 'create']);
         $app->post   ('/api/settings/email-profiles/test',  [EmailProfilesAction::class, 'testDraft']);
@@ -581,6 +583,10 @@ final class Routes
         $app->get    ('/api/settings/email-branding/preview',         [EmailBrandingAction::class, 'preview']);
         // CUSTOM(fork): logo aktuální firmy pro hlavičku SPA (fallback MyInvoice když 404)
         $app->get    ('/api/branding/logo',                           \MyInvoice\Action\Branding\SupplierLogoAction::class);
+        // Veřejné API aliasy pro logo (bearer allowlist) — stejná logika, jiná cesta.
+        // Preview zůstává interní (čte soubory z disku → jen session admin).
+        $app->post   ('/api/settings/supplier/logo',                  [EmailBrandingAction::class, 'uploadLogo']);
+        $app->delete ('/api/settings/supplier/logo',                  [EmailBrandingAction::class, 'deleteLogo']);
 
         $app->get    ('/api/settings/units',                          [SettingsAction::class, 'listUnits']);
         $app->post   ('/api/settings/units',                          [SettingsAction::class, 'createUnit']);
