@@ -2,8 +2,8 @@ import { api } from './client'
 
 export interface BankStatement {
   id: number
-  /** Zdroj výpisu: 'gpc' = nahraný/importovaný výpis, 'email_notice' = měsíční agregát e-mailových avíz. */
-  source?: 'gpc' | 'email_notice'
+  /** Zdroj výpisu: 'gpc' = nahraný/importovaný GPC výpis, 'pdf' = rozparsovaný PDF výpis (banka bez GPC exportu), 'email_notice' = měsíční agregát e-mailových avíz. */
+  source?: 'gpc' | 'pdf' | 'email_notice'
   file_name: string
   account_number: string
   /** Kód banky (4místný), pokud je u výpisu evidovaný — pro zobrazení „účet / kód". */
@@ -69,7 +69,7 @@ export interface MatchedInvoice {
   client_name: string | null
 }
 
-/** Kandidát na spárování dle částky + data (±14 dní) — vystavená i přijatá faktura. */
+/** Kandidát na spárování dle částky + data (±14 dní, fallback ±90 dní) — vystavená i přijatá faktura. */
 export interface MatchCandidate {
   type: 'invoice' | 'purchase_invoice'
   id: number
@@ -84,6 +84,9 @@ export interface MatchCandidate {
   party: string | null
   /** Faktura je už zaplacená — UI zobrazí varovný štítek (duplicitní/druhá platba). */
   paid: boolean
+  /** Fallback kandidát bez FX převodu — syrová částka sedí, ale měna faktury neodpovídá
+   *  měně transakce (klient zaplatil "stejné číslo" z cizoměnového účtu). Ověřit ručně. */
+  currency_mismatch: boolean
 }
 
 /** Jedna faktura v návrhu sloučené úhrady. */
@@ -123,11 +126,18 @@ export interface ImportResult {
   duplicate: boolean
 }
 
-/** Kandidát měnového účtu při nejednoznačném sdíleném čísle účtu (#167). */
+/**
+ * Kandidát bankovního účtu při nejednoznačném sdíleném čísle účtu. Nastane, když
+ * jednomu číslu účtu odpovídá víc účtů dodavatele — buď různými měnami (#167),
+ * nebo různým kódem banky (#206, stejné číslo u dvou bank). `label` už je
+ * server-side složený tak, aby oba případy odlišil (měna + číslo/kód banky).
+ */
 export interface AmbiguousAccount {
   account_id: number
   code: string
   label: string
+  bank_code?: string | null
+  account_number?: string
 }
 
 /** Účet pro filtr v přehledu výpisů (distinct account_number + jeho label z currencies). */
@@ -222,9 +232,22 @@ export const bankApi = {
       headers: { 'Content-Type': 'multipart/form-data' },
     }).then(r => r.data)
   },
+  /**
+   * Nahraje a rozparsuje PDF výpis banky bez GPC/ABO exportu (Creditas jako první,
+   * rozšiřitelné). Stejná 409 `ambiguous_account_currency` volba účtu jako `upload()`.
+   */
+  importPdf: (file: File, accountId?: number) => {
+    const fd = new FormData()
+    fd.append('file', file)
+    if (accountId !== undefined) fd.append('account_id', String(accountId))
+    return api.post<ImportResult>('/bank-statements/upload-pdf', fd, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    }).then(r => r.data)
+  },
+  /** `fallback=true` = v ±14 dnech nic nesedělo, vráceny širší (±90 dní) a/nebo cross-currency návrhy. */
   matchCandidates: (txId: number) =>
-    api.get<{ candidates: MatchCandidate[] }>(`/bank-transactions/${txId}/match-candidates`)
-      .then(r => r.data.candidates),
+    api.get<{ candidates: MatchCandidate[]; fallback: boolean }>(`/bank-transactions/${txId}/match-candidates`)
+      .then(r => r.data),
   matchManual: (txId: number, ref: { invoiceId?: number; purchaseInvoiceId?: number; varsymbol?: string }) =>
     api.post<{ matched: true; paid_at?: string; purchase_invoice_id?: number }>(`/bank-transactions/${txId}/match`, {
       ...(ref.invoiceId ? { invoice_id: ref.invoiceId } : {}),

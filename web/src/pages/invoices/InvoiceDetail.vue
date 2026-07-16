@@ -77,10 +77,17 @@ const approvalStatusOpen = ref(false)
 const approvalStatusDraft = ref<ApprovalStatus>('none')
 const approvalRejectReason = ref('')
 
+// Web faktura (trvalý veřejný odkaz) — modal
+const publicLinkOpen = ref(false)
+const publicLinkUrl = ref('')
+const publicLinkViewedAt = ref<string | null>(null)
+const publicLinkBusy = ref(false)
+
 const activity = ref<Array<{ id: number; user_email: string | null; user_name: string | null; action: string; payload: any; ip: string | null; created_at: string }>>([])
 const activityOpen = ref(false)
 const pdfHistory = ref<Array<{ id: number; filename: string; size_bytes: number; sha256: string; was_sent: boolean; sent_to: string[] | null; reason: string; archived_at: string }>>([])
 const pdfHistoryOpen = ref(false)
+const importedPdfPreviewOpen = ref(false)
 
 // SMTP analýza (box jen pro admina, když je log analýza zapnutá; lazy-load na rozbalení)
 const smtpEnabled = ref(false)
@@ -514,6 +521,11 @@ function actionLabel(a: string): string {
     'invoice.approval_approved':      'invoice.actions.approval_approved',
     'invoice.approval_rejected':      'invoice.actions.approval_rejected',
     'invoice.approval_reset':         'invoice.actions.approval_reset',
+    'invoice.public_link_created':     'invoice.actions.public_link_created',
+    'invoice.public_link_regenerated': 'invoice.actions.public_link_regenerated',
+    'invoice.public_viewed':           'invoice.actions.public_viewed',
+    'invoice.public_pdf_downloaded':   'invoice.actions.public_pdf_downloaded',
+    'invoice.public_attachment_downloaded': 'invoice.actions.public_attachment_downloaded',
     'proforma.final_issued':          'invoice.actions.proforma_final_issued',
   }
   return map[a] ? (t(map[a]) as string) : a
@@ -648,6 +660,7 @@ useHotkey('escape', () => {
   else if (sendOpen.value)    sendOpen.value = false
   else if (reminderOpen.value) reminderOpen.value = false
   else if (approvalStatusOpen.value) approvalStatusOpen.value = false
+  else if (publicLinkOpen.value) publicLinkOpen.value = false
 })
 
 // Děkovný e-mail za úhradu (issue #57)
@@ -901,6 +914,52 @@ async function sendTestReminder() {
     toast.error( e?.response?.data?.error?.message || t('invoice.send_test_reminder_failed'))
   } finally {
     busy.value = null
+  }
+}
+
+// ─── Web faktura — trvalý veřejný odkaz (kopírovat / regenerovat / stav zobrazení) ───
+async function openPublicLink() {
+  if (!invoice.value) return
+  publicLinkOpen.value = true
+  publicLinkBusy.value = true
+  publicLinkUrl.value = ''
+  try {
+    const r = await invoicesApi.publicLink(invoice.value.id)
+    publicLinkUrl.value = r.url
+    publicLinkViewedAt.value = r.public_viewed_at
+  } catch (e: any) {
+    publicLinkOpen.value = false
+    toast.error(e?.response?.data?.error?.message || t('invoice.public_link.load_failed'))
+  } finally {
+    publicLinkBusy.value = false
+  }
+}
+
+async function copyPublicLink() {
+  if (!publicLinkUrl.value) return
+  try {
+    await navigator.clipboard.writeText(publicLinkUrl.value)
+    toast.success(t('invoice.public_link.copied'))
+  } catch {
+    toast.error(t('invoice.public_link.copy_failed'))
+  }
+}
+
+async function regeneratePublicLink() {
+  if (!invoice.value) return
+  if (!confirm(t('invoice.public_link.regenerate_confirm'))) return
+  publicLinkBusy.value = true
+  try {
+    const r = await invoicesApi.regeneratePublicLink(invoice.value.id)
+    publicLinkUrl.value = r.url
+    publicLinkViewedAt.value = null
+    invoice.value.public_viewed_at = null
+    toast.success(t('invoice.public_link.regenerated'))
+    invoicesApi.activity(invoice.value.id).then(a => { activity.value = a }).catch(() => {})
+  } catch (e: any) {
+    toast.error(e?.response?.data?.error?.message || t('invoice.public_link.regenerate_failed'))
+  } finally {
+    publicLinkBusy.value = false
   }
 }
 
@@ -1208,6 +1267,9 @@ const invoiceActions = computed<ActionItem[]>(() => {
       show: isDraft.value && inv.invoice_type !== 'tax_document' && w,
       title: t('invoice.wr_btn') as string, run: () => { wrModalOpen.value = true } },
     // ── overflow ──
+    { key: 'public-link', label: t('invoice.public_link.btn'), icon: 'link', tier: 'overflow', variant: 'primary',
+      show: !isDraft.value && w, disabled: b,
+      title: t('invoice.public_link.btn_title') as string, run: openPublicLink },
     { key: 'clone', label: t('invoice.clone'), icon: 'copy', tier: 'overflow', variant: 'primary',
       show: !isDraft.value && !['cancellation', 'credit_note'].includes(inv.invoice_type) && w,
       disabled: b, loading: busy.value === 'clone', run: cloneInvoice },
@@ -1276,6 +1338,11 @@ const invoiceActions = computed<ActionItem[]>(() => {
               ? t('invoice.approval.status_expired')
               : t('invoice.approval.status_' + approvalStatus) }}
         </span>
+        <span v-if="invoice.public_viewed_at"
+          class="text-xs px-2 py-0.5 rounded font-normal bg-success-50 text-success-600"
+          :title="t('invoice.public_link.viewed_at', { date: invoice.public_viewed_at.replace('T', ' ').slice(0, 16) })">
+          👁 {{ t('invoice.public_link.viewed_badge') }}
+        </span>
       </h1>
       <ActionBar :actions="invoiceActions" />
     </div>
@@ -1327,6 +1394,51 @@ const invoiceActions = computed<ActionItem[]>(() => {
             {{ busy === 'paid' ? '…' : t('common.confirm') }}
           </button>
         </div>
+      </div>
+    </div>
+
+    <!-- Modal web faktury (trvalý veřejný odkaz) -->
+    <div v-if="publicLinkOpen" class="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+      <div class="bg-surface rounded-xl shadow-lg max-w-lg w-full p-5">
+        <h3 class="text-lg font-semibold mb-1">{{ t('invoice.public_link.modal_title') }}</h3>
+        <p class="text-xs text-neutral-500 mb-4">{{ t('invoice.public_link.modal_hint') }}</p>
+
+        <div v-if="publicLinkBusy && !publicLinkUrl" class="text-sm text-neutral-500 py-4 text-center">…</div>
+        <template v-else-if="publicLinkUrl">
+          <div class="flex gap-2 mb-3">
+            <input :value="publicLinkUrl" readonly @focus="($event.target as HTMLInputElement).select()"
+              class="flex-1 h-10 px-3 border border-neutral-300 rounded-md text-sm font-mono bg-neutral-50 min-w-0" />
+            <button @click="copyPublicLink"
+              class="cursor-pointer px-3 h-10 text-sm bg-primary-600 hover:bg-primary-700 text-white font-medium rounded-md shrink-0">
+              {{ t('invoice.public_link.copy') }}
+            </button>
+          </div>
+
+          <p class="text-xs mb-4" :class="publicLinkViewedAt ? 'text-success-600' : 'text-neutral-500'">
+            {{ publicLinkViewedAt
+                ? t('invoice.public_link.viewed_at', { date: publicLinkViewedAt.replace('T', ' ').slice(0, 16) })
+                : t('invoice.public_link.not_viewed') }}
+          </p>
+          <p class="text-xs text-neutral-500 mb-4">{{ t('invoice.public_link.email_note') }}</p>
+
+          <div class="flex flex-wrap justify-between gap-2">
+            <button @click="regeneratePublicLink" :disabled="publicLinkBusy"
+              class="cursor-pointer px-3 h-9 text-sm border border-warning-500/50 rounded-md text-warning-600 hover:bg-warning-50 disabled:opacity-50"
+              :title="t('invoice.public_link.regenerate_title')">
+              {{ publicLinkBusy ? '…' : t('invoice.public_link.regenerate') }}
+            </button>
+            <div class="flex gap-2">
+              <a :href="publicLinkUrl" target="_blank" rel="noopener"
+                class="px-3 h-9 inline-flex items-center text-sm border border-neutral-300 rounded-md text-neutral-700 hover:bg-neutral-50">
+                {{ t('invoice.public_link.open') }}
+              </a>
+              <button @click="publicLinkOpen = false"
+                class="cursor-pointer px-3 h-9 text-sm border border-neutral-300 rounded-md text-neutral-700 hover:bg-neutral-50">
+                {{ t('common.close') }}
+              </button>
+            </div>
+          </div>
+        </template>
       </div>
     </div>
 
@@ -2260,6 +2372,43 @@ const invoiceActions = computed<ActionItem[]>(() => {
           </span>
           <span class="text-xs text-neutral-500">{{ t('invoice.attachments.drop_here') }}</span>
         </label>
+      </div>
+    </div>
+
+    <!-- Zdrojové PDF z importu (iDoklad/Fakturoid) — originál dokladu, oddělený od našeho rendered PDF -->
+    <div v-if="invoice?.imported_pdf_path" class="bg-surface border border-neutral-200 rounded-lg shadow-sm overflow-hidden">
+      <div class="px-4 sm:px-5 py-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <div class="flex items-center gap-2 min-w-0">
+          <svg class="w-5 h-5 text-neutral-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M7 21h10a2 2 0 0 0 2-2V9.414a1 1 0 0 0-.293-.707l-5.414-5.414A1 1 0 0 0 12.586 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2z"/></svg>
+          <div class="min-w-0">
+            <h3 class="text-sm font-semibold uppercase tracking-wide text-neutral-500">{{ t('invoice.imported_pdf.title') }}</h3>
+            <div class="text-xs text-neutral-500 truncate" :title="invoice.imported_pdf_original_name || 'invoice.pdf'">
+              {{ invoice.imported_pdf_original_name || 'invoice.pdf' }}
+              <template v-if="Number(invoice.imported_pdf_size_bytes)"> · {{ formatBytes(Number(invoice.imported_pdf_size_bytes)) }}</template>
+            </div>
+          </div>
+        </div>
+        <div class="flex items-center gap-2 shrink-0">
+          <button type="button" @click="importedPdfPreviewOpen = !importedPdfPreviewOpen"
+            class="cursor-pointer px-3 h-9 text-sm border border-neutral-300 text-neutral-700 hover:bg-neutral-50 rounded-md inline-flex items-center gap-1.5">
+            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0z"/><path stroke-linecap="round" stroke-linejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
+            {{ importedPdfPreviewOpen ? t('invoice.imported_pdf.hide') : t('invoice.imported_pdf.show') }}
+          </button>
+          <a :href="invoicesApi.importedPdfUrl(invoice.id, false)" target="_blank"
+             class="cursor-pointer px-3 h-9 text-sm border border-primary-500/40 text-primary-700 hover:bg-primary-50 rounded-md inline-flex items-center gap-1.5">
+            <svg class="w-4 h-4 text-primary-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 0 0 3 3h10a3 3 0 0 0 3-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+            {{ t('common.download') }}
+          </a>
+        </div>
+      </div>
+      <!-- Inline PDF preview přes browser PDF viewer. Musí být ?inline=1 (jinak
+           Content-Disposition: attachment a některé prohlížeče blokují embed). -->
+      <div v-if="importedPdfPreviewOpen" class="bg-neutral-100 border-t border-neutral-200">
+        <iframe
+          :src="invoicesApi.importedPdfUrl(invoice.id, true) + '#view=FitH'"
+          class="w-full h-[80vh] border-0"
+          :title="invoice.imported_pdf_original_name || 'PDF'"
+        ></iframe>
       </div>
     </div>
 

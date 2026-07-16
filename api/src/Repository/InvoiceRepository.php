@@ -935,7 +935,7 @@ final class InvoiceRepository
             // Auto-klasifikace pro DPH přiznání / KH — bez ní by faktura nedorazila
             // do výkazů (VatClassificationMapper SKIPNE řádky s code=NULL).
             $code = $item['vat_classification_code']
-                ?? self::defaultSaleClassificationCode($rate, $reverseCharge, $countryIso);
+                ?? self::defaultSaleClassificationCode($rate, $reverseCharge, $countryIso, (string) ($item['unit'] ?? '') ?: null);
             $orderIndex = (int) ($item['order_index'] ?? $i);
             $stmt->execute([
                 $invoiceId,
@@ -1066,13 +1066,16 @@ final class InvoiceRepository
      *     0%  → '26' (vývoz do 3. země)
      *     jinak tuzemsko sazby
      *
-     * Pro dodávky zboží do EU (kód '20') si user musí kód změnit ručně —
-     * default rate=0% pro EU mapujeme na služby ('22'), což je častější.
+     * Pro dodávky zboží do EU (kód '20') vs služby ('22') rozhoduje měrná jednotka
+     * položky (`$unit`): fyzikální míra (kg/l/m…) → '20', časová (h/den…) → '22';
+     * bez signálu ('ks'/neznámé) statistický default '22'. Sdílená logika s
+     * VatClassificationDefaulter::classifyUnitsGoodsVsServices.
      */
     public static function defaultSaleClassificationCode(
         float $rate,
         bool $reverseCharge,
         ?string $clientCountryIso2 = null,
+        ?string $unit = null,
     ): ?string {
         $r = (int) round($rate);
         $iso = strtoupper((string) ($clientCountryIso2 ?? 'CZ'));
@@ -1084,9 +1087,13 @@ final class InvoiceRepository
         $isEu = in_array($iso, $euCountries, true);
         $isForeign = $iso !== 'CZ' && $iso !== '';
 
-        // Zahraniční klient + nulová sazba → EU služby nebo vývoz
+        // Zahraniční klient + nulová sazba → EU služby/zboží nebo vývoz do 3. země
         if ($isForeign && $r === 0) {
-            return $isEu ? '22' : '26';
+            if (!$isEu) return '26';
+            // EU: dodání zboží ('20') vs poskytnutí služby ('22') dle měrné jednotky.
+            return \MyInvoice\Service\Report\VatClassificationDefaulter::classifyUnitsGoodsVsServices(
+                $unit !== null && $unit !== '' ? [$unit] : []
+            ) === 'goods' ? '20' : '22';
         }
         // Tuzemsko / B2C cizinec s českou DPH sazbou
         if ($r >= 21)            return '1';
@@ -1309,6 +1316,76 @@ final class InvoiceRepository
         $id = $stmt->fetchColumn();
         if ($id === false) return null;
         return $this->find((int) $id);
+    }
+
+    /**
+     * Vrátí public_token faktury (web faktura); pokud ještě neexistuje, vygeneruje
+     * ho — bin2hex(random_bytes(24)) → 48 hex znaků (vzor approval_token).
+     * UPDATE podmíněný `public_token IS NULL` serializuje souběžné ensure — vyhraje
+     * první zápis, druhý si token přečte znovu.
+     */
+    public function ensurePublicToken(int $invoiceId): string
+    {
+        $pdo = $this->db->pdo();
+        $sel = $pdo->prepare('SELECT public_token FROM invoices WHERE id = ?');
+        $sel->execute([$invoiceId]);
+        $existing = $sel->fetchColumn();
+        if (is_string($existing) && $existing !== '') {
+            return $existing;
+        }
+
+        $token = bin2hex(random_bytes(24));
+        $upd = $pdo->prepare('UPDATE invoices SET public_token = ? WHERE id = ? AND public_token IS NULL');
+        $upd->execute([$token, $invoiceId]);
+        if ($upd->rowCount() === 1) {
+            return $token;
+        }
+        $sel->execute([$invoiceId]);
+        return (string) $sel->fetchColumn();
+    }
+
+    /**
+     * Zneplatní stávající veřejný odkaz vygenerováním nového tokenu (stará URL
+     * přestane platit). public_viewed_at se resetuje — vztahuje se k aktuálnímu odkazu.
+     */
+    public function regeneratePublicToken(int $invoiceId): string
+    {
+        $token = bin2hex(random_bytes(24));
+        $this->db->pdo()->prepare(
+            'UPDATE invoices SET public_token = ?, public_viewed_at = NULL WHERE id = ?'
+        )->execute([$token, $invoiceId]);
+        return $token;
+    }
+
+    /**
+     * Lehká reference veřejně viditelné faktury podle public_token, nebo null.
+     * Pravidlo viditelnosti (draft se nezobrazuje) je přímo v SQL, aby ho
+     * konzument nemohl zapomenout (vzor findByApprovalToken s expirací).
+     *
+     * @return array{id:int, supplier_id:int}|null
+     */
+    public function publicInvoiceRefByToken(string $token): ?array
+    {
+        $stmt = $this->db->pdo()->prepare(
+            "SELECT id, supplier_id FROM invoices WHERE public_token = ? AND status <> 'draft'"
+        );
+        $stmt->execute([$token]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        return $row === false ? null : ['id' => (int) $row['id'], 'supplier_id' => (int) $row['supplier_id']];
+    }
+
+    /** Najde veřejně viditelnou fakturu podle public_token (web faktura), nebo null. */
+    public function findByPublicToken(string $token): ?array
+    {
+        $ref = $this->publicInvoiceRefByToken($token);
+        return $ref === null ? null : $this->find($ref['id']);
+    }
+
+    /** Zaznamená zobrazení web faktury klientem (poslední anonymní přístup). */
+    public function markPublicViewed(int $invoiceId): void
+    {
+        $this->db->pdo()->prepare('UPDATE invoices SET public_viewed_at = NOW() WHERE id = ?')
+            ->execute([$invoiceId]);
     }
 
     /**

@@ -144,12 +144,20 @@ export interface Invoice {
   approval_reminder_at: string | null
   approval_reminder_count: number
   project_requires_approval?: boolean
+  /** Token trvalého veřejného odkazu „web faktura" (/invoice/{token}); null dokud odkaz nevznikl. */
+  public_token: string | null
+  /** Poslední zobrazení web faktury klientem (anonymní přístup); null = zatím nezobrazeno. */
+  public_viewed_at: string | null
   sent_at: string | null
   last_reminder_at: string | null
   reminder_count: number
   paid_at: string | null
   cancelled_at: string | null
   pdf_path: string | null
+  /** Zdrojové PDF z importu (iDoklad/Fakturoid) — oddělené od našeho rendered `pdf_path`. */
+  imported_pdf_path: string | null
+  imported_pdf_original_name?: string | null
+  imported_pdf_size_bytes?: number | string | null
   created_at: string
   updated_at: string
   /** Výsledek děkovného e-mailu (issue #57) — vrací mark-paid, jen když se odesílalo. */
@@ -480,6 +488,17 @@ export const invoicesApi = {
     return `/api/invoices/${id}/pdf${qs ? '?' + qs : ''}`
   },
 
+  importedPdfUrl: (id: number, inline: boolean = false) => {
+    // Přímá navigace / iframe / <a href> neposílá X-Supplier-Id header (na rozdíl od
+    // axios) — proto přidáváme supplier_id jako query param (middleware ho čte jako fallback).
+    const sid = localStorage.getItem('myinvoice.current_supplier_id')
+    const params = new URLSearchParams()
+    if (inline) params.set('inline', '1')
+    if (sid && /^\d+$/.test(sid)) params.set('supplier_id', sid)
+    const qs = params.toString()
+    return `/api/invoices/${id}/imported-pdf${qs ? '?' + qs : ''}`
+  },
+
   listPdfs: (id: number) =>
     api.get<{ items: Array<{
       id: number
@@ -560,6 +579,19 @@ export const invoicesApi = {
   requestApprovalTest: (id: number) =>
     api.post<{ sent_to: string[]; sent_at: string; is_test: true }>(
       `/invoices/${id}/request-approval-test`,
+      {},
+    ).then(r => r.data),
+
+  // Web faktura — trvalý veřejný odkaz (ensure = idempotentní vytvoření + URL)
+  publicLink: (id: number) =>
+    api.post<{ url: string; token: string; public_viewed_at: string | null }>(
+      `/invoices/${id}/public-link`,
+      {},
+    ).then(r => r.data),
+
+  regeneratePublicLink: (id: number) =>
+    api.post<{ url: string; token: string; public_viewed_at: null }>(
+      `/invoices/${id}/public-link/regenerate`,
       {},
     ).then(r => r.data),
 
