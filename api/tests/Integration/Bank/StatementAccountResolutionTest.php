@@ -135,6 +135,39 @@ final class StatementAccountResolutionTest extends TestCase
         $stmt = $this->db->pdo()->prepare('SELECT bank_code FROM bank_statements WHERE id = ?');
         $stmt->execute([$sid]);
         $this->assertSame('2010', (string) $stmt->fetchColumn(), 'výpis musí být pod zvoleným Fio účtem (2010), ne výchozím RB (5500)');
+
+        $this->db->pdo()->prepare(
+            'INSERT INTO bank_statements
+                (source, file_name, file_hash, account_number, bank_code, currency,
+                 statement_date, curr_balance)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+        )->execute([
+            'pdf', 'TEST-206-filter-rb.pdf', hash('sha256', 'test-206-filter-rb'),
+            $account, '5500', 'CZK', '2026-06-30', 2000.00,
+        ]);
+        $rbStatementId = (int) $this->db->pdo()->lastInsertId();
+        $this->statementIds[] = $rbStatementId;
+
+        // Regrese seznamu výpisů: list dříve přepsal správné bs.bank_code prvním
+        // currencies.bank_code pro stejné číslo účtu (bez ORDER BY), takže zobrazil
+        // např. /5500 společně s labelem Fio. Detail přitom správně ukazoval /2010.
+        $listResponse = $this->action->list(
+            $this->mockRequest($this->supplierId, 'admin', [], [], [
+                'filter' => ['account' => $account, 'bank_code' => '2010'],
+            ]),
+            new Response()
+        );
+        /** @var array{items?:list<array<string,mixed>>} $listBody */
+        $listBody = json_decode((string) $listResponse->getBody(), true) ?: [];
+        $listed = array_values(array_filter(
+            $listBody['items'] ?? [],
+            static fn (array $item): bool => (int) ($item['id'] ?? 0) === $sid
+        ));
+        $this->assertCount(1, $listed, 'importovaný výpis musí být v seznamu');
+        $this->assertSame('2010', (string) ($listed[0]['bank_code'] ?? ''), 'seznam musí respektovat autoritativní bank_code výpisu');
+        $this->assertStringContainsString('2010', (string) ($listed[0]['account_label'] ?? ''), 'label seznamu musí patřit ke stejnému účtu');
+        $listedIds = array_map(static fn (array $item): int => (int) ($item['id'] ?? 0), $listBody['items'] ?? []);
+        $this->assertNotContains($rbStatementId, $listedIds, 'filtr Fio /2010 nesmí vrátit RB /5500 se stejným číslem účtu');
     }
 
     /**
@@ -152,6 +185,53 @@ final class StatementAccountResolutionTest extends TestCase
         $sid = (int) ($body['statement_id'] ?? 0);
         $this->assertGreaterThan(0, $sid);
         $this->statementIds[] = $sid;
+    }
+
+    /**
+     * Stavy na účtech musí rozlišit stejné číslo u různých bank a zahrnout jak GPC,
+     * tak bankovní PDF. Starý výpis bez bank_code je při dvou bankách nejednoznačný
+     * a nesmí se započítat do obou účtů.
+     */
+    public function testAccountBalancesSeparateBanksAndIncludePdfStatements(): void
+    {
+        $account = '9912345681';
+        $fioId = $this->registerCurrency('CZK', $account, '2010');
+        $rbId = $this->registerCurrency('CZK', $account, '5500');
+
+        $this->insertStatement('gpc', $account, '2010', '2026-06-30', 1000.00, 'fio');
+        $this->insertStatement('pdf', $account, '5500', '2026-06-30', 2000.00, 'rb');
+        $this->insertStatement('gpc', $account, null, '2026-07-31', 9999.00, 'legacy-ambiguous');
+
+        $response = $this->action->accountBalances(
+            $this->mockRequest($this->supplierId, 'admin', [], []),
+            new Response()
+        );
+        /** @var array<string,mixed> $body */
+        $body = json_decode((string) $response->getBody(), true) ?: [];
+
+        $this->assertSame(200, $response->getStatusCode());
+        $accounts = [];
+        foreach ($body['accounts'] as $item) {
+            $accounts[(int) $item['id']] = $item;
+        }
+        $this->assertArrayHasKey($fioId, $accounts, 'GPC Fio musí mít vlastní řádek');
+        $this->assertArrayHasKey($rbId, $accounts, 'PDF RB musí mít vlastní řádek');
+        $this->assertSame(1000.0, (float) $accounts[$fioId]['current_balance']);
+        $this->assertSame('2010', (string) $accounts[$fioId]['bank_code']);
+        $this->assertSame('gpc', (string) $accounts[$fioId]['current_source']);
+        $this->assertSame(2000.0, (float) $accounts[$rbId]['current_balance']);
+        $this->assertSame('5500', (string) $accounts[$rbId]['bank_code']);
+        $this->assertSame('pdf', (string) $accounts[$rbId]['current_source']);
+        $series = [];
+        foreach ($body['total_czk']['series'] ?? [] as $item) {
+            $series[(int) $item['account_id']] = $item;
+        }
+        $this->assertArrayHasKey($fioId, $series, 'CZK graf musí obsahovat sérii Fio');
+        $this->assertArrayHasKey($rbId, $series, 'CZK graf musí obsahovat sérii RB');
+        $fioMonths = array_column($series[$fioId]['months'], 'balance_czk', 'month');
+        $rbMonths = array_column($series[$rbId]['months'], 'balance_czk', 'month');
+        $this->assertSame(1000.0, (float) ($fioMonths['2026-06'] ?? 0));
+        $this->assertSame(2000.0, (float) ($rbMonths['2026-06'] ?? 0));
     }
 
     // ── helpers ──────────────────────────────────────────────────────────────
@@ -188,7 +268,7 @@ final class StatementAccountResolutionTest extends TestCase
         return [$resp, $body];
     }
 
-    private function mockRequest(int $sid, string $role, array $files, array $parsedBody): ServerRequestInterface
+    private function mockRequest(int $sid, string $role, array $files, array $parsedBody, array $queryParams = []): ServerRequestInterface
     {
         $req = $this->createStub(ServerRequestInterface::class);
         $req->method('getAttribute')->willReturnCallback(function (string $name, $default = null) use ($sid, $role) {
@@ -198,6 +278,7 @@ final class StatementAccountResolutionTest extends TestCase
         });
         $req->method('getUploadedFiles')->willReturn($files);
         $req->method('getParsedBody')->willReturn($parsedBody);
+        $req->method('getQueryParams')->willReturn($queryParams);
         $req->method('getServerParams')->willReturn([]);
         $req->method('getHeaderLine')->willReturn('');
         return $req;
@@ -233,6 +314,34 @@ final class StatementAccountResolutionTest extends TestCase
             }
         }
         return $n;
+    }
+
+    private function insertStatement(
+        string $source,
+        string $accountNumber,
+        ?string $bankCode,
+        string $date,
+        float $balance,
+        string $hashSuffix,
+    ): int {
+        $this->db->pdo()->prepare(
+            'INSERT INTO bank_statements
+                (source, file_name, file_hash, account_number, bank_code, currency,
+                 statement_date, curr_balance)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+        )->execute([
+            $source,
+            "TEST-206-{$hashSuffix}.{$source}",
+            hash('sha256', "test-206-balances:{$hashSuffix}"),
+            $accountNumber,
+            $bankCode,
+            'CZK',
+            $date,
+            $balance,
+        ]);
+        $id = (int) $this->db->pdo()->lastInsertId();
+        $this->statementIds[] = $id;
+        return $id;
     }
 
     /**

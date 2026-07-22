@@ -38,6 +38,7 @@ use MyInvoice\Action\Report\DphPriznaniAction;
 use MyInvoice\Action\Report\KontrolniHlaseniAction;
 use MyInvoice\Action\Report\DphBookAction;
 use MyInvoice\Action\Report\MonthlyExportAction;
+use MyInvoice\Action\Report\OssReportAction;
 use MyInvoice\Action\Report\SouhrnneHlaseniAction;
 use MyInvoice\Action\Report\IncomeTaxAction;
 use MyInvoice\Action\Admin\InvoicesZipAction;
@@ -47,6 +48,7 @@ use MyInvoice\Action\Admin\ListActivityLogAction;
 use MyInvoice\Action\Admin\ListSentEmailsAction;
 use MyInvoice\Action\Admin\UserAdminAction;
 use MyInvoice\Action\Settings\EmailBrandingAction;
+use MyInvoice\Action\Settings\BrandingProfilesAction;
 use MyInvoice\Action\Settings\EmailProfilesAction;
 use MyInvoice\Action\Settings\PdfSigningDiagnosticsAction;
 use MyInvoice\Action\Settings\SettingsAction;
@@ -61,6 +63,7 @@ use MyInvoice\Action\Invoice\CancelInvoiceAction;
 use MyInvoice\Action\Invoice\CreateInvoiceAction;
 use MyInvoice\Action\Invoice\DeleteInvoiceAction;
 use MyInvoice\Action\Invoice\ExportCsvAction;
+use MyInvoice\Action\Invoice\ExportSelectedPdfAction;
 use MyInvoice\Action\Invoice\InvoiceActivityAction;
 use MyInvoice\Action\Invoice\GetInvoiceAction;
 use MyInvoice\Action\Invoice\InvoiceIsdocAction;
@@ -222,6 +225,7 @@ final class Routes
 
         // Globální vyhledávač pro sidebar (klienti/dodavatelé + vydané/přijaté faktury)
         $app->get('/api/search', \MyInvoice\Action\Search\GlobalSearchAction::class);
+        $app->get('/api/branding-profiles', [BrandingProfilesAction::class, 'publicList']);
 
         // Codebooks
         $app->get('/api/codebooks/countries',  [CodebookAction::class, 'countries']);
@@ -301,6 +305,7 @@ final class Routes
         // Invoices (M3 — draft + editor + sumace; vystavení/odeslání/PDF přijde v M4)
         $app->get    ('/api/invoices',              ListInvoicesAction::class);
         $app->get    ('/api/invoices/export.csv',   ExportCsvAction::class);
+        $app->get    ('/api/invoices/export.pdf',   ExportSelectedPdfAction::class);
         // Veřejný alias admin exportu (bearer allowlist pokrývá /api/invoices/*):
         // ?format=pdf-zip|isdoc|pohoda|stereo & month=YYYY-MM nebo period=quarterly&year&quarter
         $app->get    ('/api/invoices/export',       ExportAction::class);
@@ -504,6 +509,9 @@ final class Routes
         // Kniha DPH (interní VAT žurnál — NE EPO podání, vždy měsíční)
         $app->get    ('/api/reports/dph-book/preview', [DphBookAction::class, 'preview']);
         $app->get    ('/api/reports/dph-book',         [DphBookAction::class, 'download']);
+        // OSS (One Stop Shop) — etapa 1: kvartální dashboard z ručně označených řádků.
+        $app->get    ('/api/reports/oss/preview',      [OssReportAction::class, 'preview']);
+        $app->get    ('/api/reports/oss',              [OssReportAction::class, 'download']);
         // Měsíční export — background job: jeden ZIP s vybranými exporty za měsíc
         // (VF/PF PDF+ISDOC, výpisy PDF+GPC, Kniha DPH). Běží na pozadí (import_jobs).
         $app->get    ('/api/reports/monthly-export/preview',                  [MonthlyExportAction::class, 'preview']);
@@ -563,6 +571,13 @@ final class Routes
         $app->post   ('/api/settings/email-profiles/{id:[0-9]+}/folders', [EmailProfilesAction::class, 'browseImapFolders']);
         $app->put    ('/api/settings/email-profiles/{id:[0-9]+}', [EmailProfilesAction::class, 'update']);
         $app->delete ('/api/settings/email-profiles/{id:[0-9]+}', [EmailProfilesAction::class, 'delete']);
+        $app->get    ('/api/settings/branding-profiles',                 [BrandingProfilesAction::class, 'list']);
+        $app->post   ('/api/settings/branding-profiles',                 [BrandingProfilesAction::class, 'create']);
+        $app->put    ('/api/settings/branding-profiles/{id:[0-9]+}',     [BrandingProfilesAction::class, 'update']);
+        $app->delete ('/api/settings/branding-profiles/{id:[0-9]+}',     [BrandingProfilesAction::class, 'delete']);
+        $app->post   ('/api/settings/branding-profiles/{id:[0-9]+}/default', [BrandingProfilesAction::class, 'setDefault']);
+        $app->post   ('/api/settings/branding-profiles/{id:[0-9]+}/logo', [BrandingProfilesAction::class, 'uploadLogo']);
+        $app->delete ('/api/settings/branding-profiles/{id:[0-9]+}/logo', [BrandingProfilesAction::class, 'deleteLogo']);
         $app->get    ('/api/settings/pdf-signing/diagnostics', PdfSigningDiagnosticsAction::class);
         $app->get    ('/api/settings/pdf-signing',          [SigningProfilesAction::class, 'pdfSettings']);
         $app->post   ('/api/settings/pdf-signing/test',     [SigningProfilesAction::class, 'testPdfSigning']);

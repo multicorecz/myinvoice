@@ -31,8 +31,9 @@ final class MeAction
         // FAIL-OPEN — při flagu OFF / super-adminovi / prázdné tabulce vrátí allowedIds všechny.
         $allowedIds = $this->access->allowedIds($user);
         $inClause = $allowedIds !== [] ? implode(',', array_map('intval', $allowedIds)) : '0';
+        $ossSelect = $this->db->hasColumn('supplier', 'oss_enabled') ? 'oss_enabled' : '0 AS oss_enabled';
         $suppliers = $this->db->pdo()->query(
-            'SELECT id, company_name, ic, is_vat_payer, is_identified, taxpayer_type,
+            'SELECT id, company_name, ic, is_vat_payer, is_identified, ' . $ossSelect . ', taxpayer_type,
                     default_payment_due_days, default_payment_due_unit, default_prices_include_vat,
                     auto_send_reminders, payment_thanks_enabled, payment_thanks_default_checked
                FROM supplier WHERE id IN (' . $inClause . ') ORDER BY id'
@@ -43,6 +44,7 @@ final class MeAction
             // Identifikovaná osoba (§ 6g–6l, issue #94) — neplátce s přeshraničními
             // povinnostmi; editor podle ní nabídne RC u zahraničních faktur.
             $s['is_identified']            = (bool) ($s['is_identified'] ?? false);
+            $s['oss_enabled']              = (bool) ($s['oss_enabled'] ?? false);
             // 'fo' = OSVČ (fyzická osoba), 'po' = s.r.o. (právnická osoba), null = nenastaveno.
             $s['taxpayer_type']            = $s['taxpayer_type'] !== null ? (string) $s['taxpayer_type'] : null;
             $s['default_payment_due_days'] = (int) $s['default_payment_due_days'];

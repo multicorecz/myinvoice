@@ -363,6 +363,7 @@ final class BankStatementAction
         $year    = isset($filter['year'])  && $filter['year']  !== '' ? (int) $filter['year']  : null;
         $month   = isset($filter['month']) && $filter['month'] !== '' ? (int) $filter['month'] : null;
         $account = isset($filter['account']) ? trim((string) $filter['account']) : '';
+        $bankCode = isset($filter['bank_code']) ? trim((string) $filter['bank_code']) : '';
 
         // Společný scope filtr (account_number/bank_code z currencies dodavatele).
         $scopeSql = "EXISTS (
@@ -383,6 +384,13 @@ final class BankStatementAction
             $filterSql .= " AND TRIM(LEADING '0' FROM REGEXP_REPLACE(IFNULL(bs.account_number, ''), '[^0-9]', ''))
                               = TRIM(LEADING '0' FROM REGEXP_REPLACE(?, '[^0-9]', ''))";
             $filterParams[] = $account;
+            if ($bankCode !== '') {
+                $allowMissingBankCode = $this->allowMissingBankCode($sid, $account) ? 1 : 0;
+                $filterSql .= " AND (bs.bank_code = ?
+                                  OR ((bs.bank_code IS NULL OR bs.bank_code = '') AND ? = 1))";
+                $filterParams[] = $bankCode;
+                $filterParams[] = $allowMissingBankCode;
+            }
         }
 
         $countStmt = $this->db->pdo()->prepare("SELECT COUNT(*) FROM bank_statements bs WHERE $scopeSql$filterSql");
@@ -393,16 +401,22 @@ final class BankStatementAction
         // přes scalar subselect (LIMIT 1 — sup. může mít jen 1 záznam per account_number+bank_code).
         $stmt = $this->db->pdo()->prepare(
             "SELECT bs.id, bs.source, bs.file_name, bs.account_number,
-                    -- Kód banky autoritativně z konfigurovaného účtu (currencies); GPC výpisy
-                    -- ho neukládají (na rozdíl od e-mailových avíz), tak ať se zobrazí všude.
+                    -- Kód uložený na výpisu je autoritativní. U starších záznamů bez
+                    -- bank_code doplň kód z currencies jen tehdy, když je pro dané číslo
+                    -- účtu jednoznačný; LIMIT 1 by při shodném čísle u více bank zobrazil
+                    -- náhodnou banku (#206).
                     COALESCE(
-                      (SELECT cur.bank_code FROM currencies cur
+                      bs.bank_code,
+                      (SELECT CASE
+                                WHEN COUNT(DISTINCT NULLIF(cur.bank_code, '')) = 1
+                                THEN MAX(NULLIF(cur.bank_code, ''))
+                                ELSE NULL
+                              END
+                         FROM currencies cur
                         WHERE cur.supplier_id = ?
                           AND TRIM(LEADING '0' FROM REGEXP_REPLACE(IFNULL(cur.account_number, ''), '[^0-9]', ''))
                             = TRIM(LEADING '0' FROM REGEXP_REPLACE(IFNULL(bs.account_number, ''),  '[^0-9]', ''))
-                          AND cur.bank_code IS NOT NULL AND cur.bank_code <> ''
-                        LIMIT 1),
-                      bs.bank_code
+                      )
                     ) AS bank_code,
                     bs.currency, bs.statement_date, bs.statement_number,
                     bs.prev_balance, bs.curr_balance, bs.transaction_count, bs.matched_count, bs.imported_at,
@@ -413,7 +427,13 @@ final class BankStatementAction
                         AND TRIM(LEADING '0' FROM REGEXP_REPLACE(IFNULL(cur.account_number, ''), '[^0-9]', ''))
                           = TRIM(LEADING '0' FROM REGEXP_REPLACE(IFNULL(bs.account_number, ''),  '[^0-9]', ''))
                         AND (bs.bank_code IS NULL OR cur.bank_code IS NULL OR cur.bank_code = bs.bank_code)
-                      LIMIT 1) AS account_label
+                      LIMIT 1) AS account_label,
+                    -- Položky převzaté oficiálním výpisem (EmailNoticeReconciler) zůstávají
+                    -- na sekundárním výpisu jako 'ignored'. Bez nich by avízo/iDoklad výpis
+                    -- nikdy nedosáhl matched_count === transaction_count a visel by navždy
+                    -- na oranžovém badge.
+                    (SELECT COUNT(*) FROM bank_transactions bt2
+                      WHERE bt2.statement_id = bs.id AND bt2.match_status = 'ignored') AS ignored_count
                FROM bank_statements bs
               WHERE $scopeSql$filterSql
               ORDER BY bs.statement_date DESC, bs.id DESC
@@ -425,6 +445,7 @@ final class BankStatementAction
             $r['id'] = (int) $r['id'];
             $r['transaction_count'] = (int) $r['transaction_count'];
             $r['matched_count'] = (int) $r['matched_count'];
+            $r['ignored_count'] = (int) $r['ignored_count'];
             $r['prev_balance'] = (float) $r['prev_balance'];
             $r['curr_balance'] = (float) $r['curr_balance'];
             $r['has_file'] = (bool) $r['has_file'];
@@ -485,6 +506,33 @@ final class BankStatementAction
     }
 
     /**
+     * Smí se výpis bez uloženého `bank_code` (starší import) přiřadit k tomuto
+     * číslu účtu? Jen když je číslo mezi účty dodavatele jednoznačné — jinak by
+     * se při stejném čísle u dvou bank (Fio /2010 vs RB /5500) započetl do obou
+     * (#206). Volitelně zúženo na měnu (víceměnové sdílené číslo účtu — #167).
+     *
+     * Normalizace čísla je shodná s {@see AccountNumberNormalizer::normalize}
+     * i s párovacími dotazy výše (strip non-digits + ltrim '0'), takže se
+     * uniqueness počítá stejně, jako se pak výpisy párují.
+     */
+    private function allowMissingBankCode(int $supplierId, string $accountNumber, ?string $currencyCode = null): bool
+    {
+        $sql = "SELECT COUNT(*) FROM currencies cur
+                 WHERE cur.supplier_id = ?
+                   AND TRIM(LEADING '0' FROM REGEXP_REPLACE(IFNULL(cur.account_number, ''), '[^0-9]', ''))
+                     = TRIM(LEADING '0' FROM REGEXP_REPLACE(?, '[^0-9]', ''))";
+        $params = [$supplierId, $accountNumber];
+        if ($currencyCode !== null && $currencyCode !== '') {
+            $sql .= ' AND UPPER(cur.code) = ?';
+            $params[] = strtoupper($currencyCode);
+        }
+        $stmt = $this->db->pdo()->prepare($sql);
+        $stmt->execute($params);
+
+        return (int) $stmt->fetchColumn() === 1;
+    }
+
+    /**
      * GET /api/bank-statements/account-balances
      *
      * Přehled zůstatků na bankovních účtech dodavatele:
@@ -493,7 +541,7 @@ final class BankStatementAction
      *   • celkový součet přepočtený na CZK kurzem ČNB ke konci každého měsíce.
      *
      * Zdroje zůstatku (per měsíc/aktuální stav vyhrává novější datum, při shodě GPC):
-     *   • `source = 'gpc'` — autoritativní konečný zůstatek z hlavičky 074,
+     *   • `source IN ('gpc', 'pdf')` — autoritativní konečný zůstatek z výpisu,
      *   • e-mailová avíza (`bank_transactions.balance`) — disponibilní zůstatek
      *     z těla avíza (Creditas/Fio/RB), typicky čerstvější než poslední výpis.
      *
@@ -519,19 +567,22 @@ final class BankStatementAction
         $accStmt->execute([$sid]);
         $currencyAccounts = $accStmt->fetchAll(\PDO::FETCH_ASSOC);
 
-        // GPC výpisy pro konkrétní účet: normalizovaný match čísla účtu (padding/lomítko),
-        // kompatibilní kód banky a měna (disambiguace víceměnového sdíleného čísla — #167).
+        // Oficiální GPC/PDF výpisy pro konkrétní účet: normalizovaný match čísla účtu
+        // (padding/lomítko), přesný kód banky a měna. Starý výpis bez bank_code lze
+        // použít jen tehdy, když je číslo+měna mezi účty dodavatele jednoznačné;
+        // jinak by se při stejném čísle u Fio /2010 a RB /5500 započetl 2× (#206).
         $stStmt = $pdo->prepare(
             "SELECT DATE_FORMAT(bs.statement_date, '%Y-%m') AS ym,
                     bs.statement_date AS sdate,
-                    bs.curr_balance   AS bal
+                    bs.curr_balance   AS bal,
+                    bs.source         AS src
                FROM bank_statements bs
-              WHERE bs.source = 'gpc'
+              WHERE bs.source IN ('gpc', 'pdf')
                 AND bs.statement_date IS NOT NULL
                 AND bs.curr_balance IS NOT NULL
                 AND TRIM(LEADING '0' FROM REGEXP_REPLACE(IFNULL(bs.account_number, ''), '[^0-9]', ''))
                   = TRIM(LEADING '0' FROM REGEXP_REPLACE(?, '[^0-9]', ''))
-                AND (bs.bank_code IS NULL OR ? IS NULL OR bs.bank_code = ?)
+                AND (bs.bank_code = ? OR ((bs.bank_code IS NULL OR bs.bank_code = '') AND ? = 1))
                 AND (bs.currency IS NULL OR bs.currency = '' OR bs.currency = ?)
               ORDER BY bs.statement_date ASC, bs.id ASC"
         );
@@ -549,7 +600,7 @@ final class BankStatementAction
                 AND bt.balance IS NOT NULL
                 AND TRIM(LEADING '0' FROM REGEXP_REPLACE(IFNULL(bs.account_number, ''), '[^0-9]', ''))
                   = TRIM(LEADING '0' FROM REGEXP_REPLACE(?, '[^0-9]', ''))
-                AND (bs.bank_code IS NULL OR ? IS NULL OR bs.bank_code = ?)
+                AND (bs.bank_code = ? OR ((bs.bank_code IS NULL OR bs.bank_code = '') AND ? = 1))
                 AND (bs.currency IS NULL OR bs.currency = '' OR bs.currency = ?)
               ORDER BY bt.posted_at ASC, bt.id ASC"
         );
@@ -561,9 +612,10 @@ final class BankStatementAction
 
         foreach ($currencyAccounts as $ca) {
             $code = strtoupper((string) $ca['code']);
+            $allowMissingBankCode = $this->allowMissingBankCode($sid, (string) $ca['account_number'], $code) ? 1 : 0;
             $params = [
                 (string) $ca['account_number'],
-                $ca['bank_code'], $ca['bank_code'],
+                $ca['bank_code'], $allowMissingBankCode,
                 $code,
             ];
             $stStmt->execute($params);
@@ -571,14 +623,18 @@ final class BankStatementAction
             $emStmt->execute($params);
             $emailRows = $emStmt->fetchAll(\PDO::FETCH_ASSOC);
             if ($rows === [] && $emailRows === []) {
-                continue; // účet bez GPC výpisů i avíz se zůstatkem se nezobrazuje
+                continue; // účet bez oficiálních výpisů i avíz se zůstatkem se nezobrazuje
             }
 
             // Závěrečný zůstatek za měsíc = poslední záznam v měsíci (řazeno ASC →
-            // přepíše se); avízo přebije GPC jen s ostře novějším datem (shoda → GPC).
+            // přepíše se); avízo přebije výpis jen s ostře novějším datem (shoda → výpis).
             $closings = [];
             foreach ($rows as $r) {
-                $closings[(string) $r['ym']] = ['bal' => (float) $r['bal'], 'date' => (string) $r['sdate'], 'src' => 'gpc'];
+                $closings[(string) $r['ym']] = [
+                    'bal' => (float) $r['bal'],
+                    'date' => (string) $r['sdate'],
+                    'src' => (string) $r['src'],
+                ];
             }
             foreach ($emailRows as $r) {
                 $ym = (string) $r['ym'];
@@ -692,6 +748,7 @@ final class BankStatementAction
 
         // Celkový graf v CZK — společná osa, carry-forward per účet, kurz ke konci měsíce.
         $totalMonths = [];
+        $accountTotalMonths = [];
         if ($allMonths !== []) {
             $ms = array_keys($allMonths);
             sort($ms);
@@ -701,19 +758,35 @@ final class BankStatementAction
                 $monthEnd = date('Y-m-t', (int) strtotime($m . '-01'));
                 $sum = 0.0;
                 $have = false;
-                foreach ($perAcc as $pa) {
+                foreach ($perAcc as $i => $pa) {
                     $bal = null;
                     foreach ($pa['monthClosings'] as $ym => $b) {
                         if ($ym <= $m) { $bal = $b; } else { break; }
                     }
-                    if ($bal === null) { continue; }
-                    $rate = $rateFor($pa['code'], $monthEnd);
-                    if ($rate === null) { continue; } // měna bez kurzu — vynech (flag missing_rates)
-                    $sum += $bal * $rate;
-                    $have = true;
+                    $balanceCzk = null;
+                    if ($bal !== null) {
+                        $rate = $rateFor($pa['code'], $monthEnd);
+                        if ($rate !== null) {
+                            $balanceCzk = round($bal * $rate, 2);
+                            $sum += $balanceCzk;
+                            $have = true;
+                        }
+                    }
+                    $accountTotalMonths[$i][] = ['month' => $m, 'balance_czk' => $balanceCzk];
                 }
                 $totalMonths[] = ['month' => $m, 'balance_czk' => $have ? round($sum, 2) : null];
             }
+        }
+
+        $totalSeries = [];
+        foreach ($perAcc as $i => $pa) {
+            $totalSeries[] = [
+                'account_id'    => (int) $pa['ca']['id'],
+                'label'         => (string) ($pa['ca']['label'] ?? '') !== '' ? (string) $pa['ca']['label'] : $pa['code'],
+                'account_number'=> (string) $pa['ca']['account_number'],
+                'bank_code'     => $pa['ca']['bank_code'] !== null ? (string) $pa['ca']['bank_code'] : null,
+                'months'        => $accountTotalMonths[$i] ?? [],
+            ];
         }
 
         $totalCurrent = 0.0;
@@ -727,6 +800,7 @@ final class BankStatementAction
             'total_czk'     => [
                 'current' => round($totalCurrent, 2),
                 'months'  => $totalMonths,
+                'series'  => $totalSeries,
             ],
             'missing_rates' => $missing,
         ]);
@@ -776,14 +850,14 @@ final class BankStatementAction
         }
         $fileName = (string) $ownedRow['file_name'];
 
-        // Avízo-výpis (e-mailová bankovní avíza) smí jít smazat jen když na něm nezbývá
-        // žádná spárovaná položka — typicky poté, co párování převzal oficiální GPC výpis
-        // (EmailNoticeReconciler). Smazání výpisu se spárovanými transakcemi by jinak
-        // osiřelo zaplacené faktury (invoice_payments.bank_transaction_id je ON DELETE
+        // Sekundární výpis (e-mailová avíza, iDoklad) smí jít smazat jen když na něm
+        // nezbývá žádná spárovaná položka — typicky poté, co párování převzal oficiální
+        // GPC výpis (EmailNoticeReconciler). Smazání výpisu se spárovanými transakcemi by
+        // jinak osiřelo zaplacené faktury (invoice_payments.bank_transaction_id je ON DELETE
         // SET NULL → platba zůstane, ztratí ale vazbu; payment_matches CASCADE → vazba
-        // přijaté faktury zmizí úplně). U GPC chování neměníme.
+        // přijaté faktury zmizí úplně). U GPC/PDF chování neměníme.
         // Počítáme ŽIVĚ (ne uložený matched_count) — odolné vůči stale hodnotě.
-        if ((string) $ownedRow['source'] === 'email_notice') {
+        if (in_array((string) $ownedRow['source'], ['email_notice', 'idoklad'], true)) {
             $matchedLive = (int) $pdo->query(
                 "SELECT COUNT(*) FROM bank_transactions
                   WHERE statement_id = " . (int) $id . "
@@ -793,7 +867,7 @@ final class BankStatementAction
                 return Json::error(
                     $response,
                     'has_matches',
-                    'Avízo-výpis má spárované položky. Nejdřív je rozpáruj (nebo nech převzít oficiálním GPC výpisem).',
+                    'Výpis má spárované položky. Nejdřív je rozpáruj (nebo nech převzít oficiálním GPC výpisem).',
                     409
                 );
             }
@@ -901,12 +975,12 @@ final class BankStatementAction
             return Json::error($response, 'not_found', 'Výpis nenalezen.', 404);
         }
 
-        // Avízo-výpis (virtuální, složený z e-mailových bankovních avíz) nemá originální
+        // Virtuální výpis (složený z e-mailových avíz nebo z iDoklad pohybů) nemá originální
         // PDF — přikládání PDF u něj nedává smysl. UI tlačítko skrývá, server pro jistotu blokuje.
         $srcStmt = $this->db->pdo()->prepare('SELECT source FROM bank_statements WHERE id = ?');
         $srcStmt->execute([$id]);
-        if ((string) $srcStmt->fetchColumn() === 'email_notice') {
-            return Json::error($response, 'unsupported', 'K avízo-výpisu nelze přikládat PDF.', 400);
+        if (in_array((string) $srcStmt->fetchColumn(), ['email_notice', 'idoklad'], true)) {
+            return Json::error($response, 'unsupported', 'K virtuálnímu výpisu nelze přikládat PDF.', 400);
         }
 
         $file = $request->getUploadedFiles()['file'] ?? null;

@@ -7,6 +7,63 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed
+
+- **Zahozen matoucí sloupec `supplier.data_box_type`.** Přidala ho migrace 0038 jako „typ datové schránky (OVM/PO/FO)", ale UI pro něj nikdy nemělo editační pole, takže byl na všech instalacích prázdný. Jediné místo, které ho četlo, byl generátor EPO `VetaP` — a používal ho chybně jako typ daňového subjektu, což rozbilo podání DPH/KH/SHV všem právnickým osobám (opraveno v 4.49.2). Typ subjektu drží `taxpayer_type` (fyzická/právnická osoba) a nic jiného s ním souviset nemá; sloupec se zavádějícím jménem k té záměně jen zval, tak jde pryč i s průchodem přes API a frontend. Datové schránky zatím implementované nejsou — až budou, dostanou vlastní, jednoznačně pojmenovaná pole. `data_box_id` zůstává beze změny. Žádná data se neztrácejí, sloupec byl všude NULL. (migrace 0140)
+
+## [4.49.2] — 2026-07-20
+
+### Fixed
+
+- **Právnická osoba nemohla podat přiznání k DPH, kontrolní ani souhrnné hlášení — EPO podání odmítlo.** Ve `VetaP` se atribut `typ_ds` (typ daňového subjektu: F = fyzická, P = právnická osoba) plnil z databázového sloupce `data_box_type`, což je ale typ *datové schránky* (OVM/PO/FO) — jiná věc se zavádějícím jménem. Ten sloupec navíc nemá nikde v UI editor, jen projde přenosovým payloadem nastavení, takže je v praxi vždy prázdný. Fallback proto padal na „F" úplně vždy a každé s.r.o. dostalo na Daňovém portálu tvrdou chybu „U fyzické osoby musí být kmenová část DIČ tvořena RČ nebo vlastním číslem plátce" — DIČ právnické osoby je odvozené od IČO, ne od rodného čísla, takže podání neprošlo vůbec. `typ_ds` se nově odvozuje z `taxpayer_type` (fo/po), tedy z pole, které uživatel v nastavení skutečně vyplňuje a které se o pár řádků dál už používalo pro volbu mezi obchodní firmou a jménem/příjmením. Týká se DPHDP3, DPHKH1 i DPHSHV. Jde čistě o generátor XML — žádná migrace, stačí nasadit a výkaz znovu vyexportovat.
+
+## [4.49.1] — 2026-07-20
+
+### Fixed
+
+- **Upgrade padal na migraci 0136, pokud v datech byly starší duplicitní bankovní pohyby.** Migrace `0136` přidávala na `bank_transactions` unikátní index přes `(source, source_ref)` a napřed tvrdě zastavila upgrade, když v datech našla duplicitu. Na instalacích s delší historií ale duplicitní e-mailová avíza reálně existují — pocházejí z doby před idempotenčním lookupem (#161) — takže se z pojistky proti souběhu stal blokátor celého upgradu aplikace, a to včetně všech následujících migrací. Unikátnost se nově nevyžaduje vůbec a zůstává jen běžný index; duplicitní avízo samo o sobě nic nerozbíjí (jde o obsahově shodné řádky), zato ruční čištění živé tabulky, na které visí `invoice_payments` a `payment_matches`, riskantní je. Idempotenci importů z iDokladu i z e-mailových avíz drží aplikační vrstva, kde byla i doteď, takže se pro uživatele nic nemění — jen upgrade projde. Instalace, které původní `0136` už úspěšně aplikovaly, si unikátní index nechají zahodit a dorovnají schéma. (#225, migrace 0139)
+- **Doklad s dlouhou adresou nešel vyexportovat do Pohody.** Exportér psal adresu protistrany syrově, přestože Pohoda XSD má na adresní typ délkové limity — faktura s ulicí delší než 64 znaků neprošla validací a export skončil chybou. Pole se nově ořezávají podle limitů ze schématu (firma 255, ulice a jméno 64, obec 45, PSČ 15, e-mail 98, telefon 40), s ohledem na diakritiku. Adresa je identifikační údaj, ne částka, takže zkrácení je přijatelnější než neexportovatelný doklad. Ostatní exportéry jsou v pořádku: Stereo ani Money S3 schéma nemají, ISDOC na adresních polích žádný limit nedefinuje.
+
+## [4.49.0] — 2026-07-20
+
+### Added
+
+- **Klienta lze založit bez e-mailu.** Hlavní e-mail klienta byl dosud povinný, což nutilo vymýšlet fiktivní adresu u historických dokladů, kde e-mail protistrany prostě není k dispozici. Nově je pole volitelné; když ho vyplníte, kontroluje se dál na platný tvar, takže se do systému nedostane neodesílatelná adresa. Bez e-mailu klientovi nepůjde odeslat doklad ani upomínku — odesílací cesty vracejí srozumitelnou chybu místo pádu a cron automatických upomínek takového klienta hlásí jako **přeskočeného**, ne jako chybu běhu. E-mail vlastní firmy (dodavatele) zůstává povinný, protože se tiskne na fakturu a slouží jako odesílatel. Importy z iDokladu a Fakturoidu dosud u klientů bez e-mailu dosazovaly placeholder `unknown@import.local`, aby prošly přes `NOT NULL`; nově tam zůstane prázdno a migrace tento placeholder v existujících datech přepíše na prázdnou hodnotu, aby nevypadal jako reálná adresa. (#221, migrace 0138)
+
+### Fixed
+
+- **OSS ovládání v editoru zvyšovalo každý řádek položky.** Zaškrtávátko OSS sedělo nad polem popisu, takže i u dokladu bez jediného OSS plnění byla každá položka o řádek vyšší. Checkbox se přesunul na konec řádku hned před tlačítko smazání a popis má zpět plnou šířku; číselníky státu, sazby, typu plnění a původního období se po zaškrtnutí rozbalí do vlastního řádku pod položkou. Mobilní zobrazení zůstává beze změny.
+
+## [4.48.0] — 2026-07-20
+
+### Added
+
+- **OSS (One Stop Shop) — ruční evidence a EPO export.** Nový režim pro přeshraniční B2C prodej do EU: dodavatel se zaregistruje v **Nastavení → firma** (režim, datum platnosti, stát identifikace, měna přiznání) a na řádcích faktury pak označuje plnění spadající do OSS — stát spotřeby, typ plnění a sazby, kurz a případné původní období u oprav se ukládají jako **snímek na řádku**, takže pozdější změna číselníků výkaz nerozhodí. Kvartální přehled **Daně → OSS přiznání** sumuje podle státu, sazby a typu plnění a exportuje řádné přiznání i opravy minulých období do XML **OSSEI1** pro portál EPO, včetně validace proti přiloženému oficiálnímu XSD. OSS údaje si nese i dobropis a hromadné opětovné vystavení. Zařazení řádku, volba zahraniční sazby a kurzový snímek jsou záměrně ruční — automatické posouzení B2B/B2C, hlídání limitu 10 000 EUR ani režim IOSS tato etapa neřeší. (#223, migrace 0137)
+- **Hromadný PDF export vystavených faktur.** Vybrané faktury lze sloučit do jednoho PDF, volitelně s elektronickým podpisem výsledku, a v seznamu přibylo zaškrtnutí všech faktur v měsíčním bloku. Sloučený export za období má strop 200 faktur — na rozdíl od ZIPu, který skládá už nacachovaná PDF, se každý doklad renderuje znovu, takže kvartál o stovkách faktur uměl přetáhnout timeout requestu; nad strop export vrátí `too_many` s doporučením ZIPu. Do sloučeného PDF vstupují jen vystavené doklady, aby se omylem nepodepsal koncept s placeholderem `DRAFT-{id}`. (#224)
+- **Vazba faktury na bankovní operaci v detailu dokladu.** U uhrazené faktury je nově vidět, která bankovní operace ji zaplatila, včetně zdroje výpisu. Dotaz je kotvený na tenanta přes `JOIN invoices ON supplier_id`, takže cizí dodavatel vazbu nevidí ani se znalostí ID faktury. (#222)
+- **iDoklad — import bankovních pohybů bez duplicit.** Import z iDokladu umí přírůstkově načíst bankovní pohyby jako virtuální výpis (`source = idoklad`), omezit je obdobím a bezpečně je spárovat s fakturami. Pohyby převzaté později oficiálním GPC/PDF výpisem zůstávají jako `ignored`, takže sekundární výpis už nevisí navždy na oranžovém badge. (#220)
+
+### Fixed
+
+- **OSS se nabízel i bez registrace do režimu.** Přepínač OSS v nastavení firmy sice existoval (a je ve výchozím stavu vypnutý), ale řádky faktury nabízely OSS zaškrtávátko každému. Nově se OSS ovládání v editoru zobrazí až po zapnutí režimu; řádek, který příznak už nese, si prvky ponechá i po vypnutí, aby zpětná editace dokladu nebyla naslepo. Zároveň byla **doplněna chybějící routa a položka menu** `Daně → OSS přiznání` — stránka kvartálního přehledu byla v aplikaci přítomná, ale nebyla odnikud dosažitelná (manuál ji přitom už popisoval). Menu i routa respektují přepínač, takže bez registrace se OSS nenabízí vůbec.
+- **Zahraniční sazba DPH šla vybrat i na řádku mimo OSS.** U dodavatele s OSS se sazby načítají pro všechny státy, ale výběr na řádku je nefiltroval podle země. Cizí sazba na běžném řádku zůstala v tuzemské evidenci a podle prahu roku spadla do české klasifikace — DE 19 % se vykázalo na snížené sazbě DPHDP3 s 19% částkou daně, bez jakéhokoli varování. Nabídka je nově omezená na české sazby, dokud není řádek označený jako OSS, odškrtnutí OSS vrátí sazbu na výchozí a totéž pravidlo hlídá i serverová validace (zahraniční sazbu mimo OSS odmítne). Souhrnné řádky výkazu práce a materiálu jsou vždy tuzemské. (#223)
+- **Nulová OSS sazba rozbíjela uložení faktury.** Editor ji nabízel, ale backend ji odmítal, takže doklad s ní nešel uložit. Formulář OSSEI1 zná v `vat_rate_type_code` jen „Z" (základní) a „S" (sníženou), nulová sazba tam nemá kód — volba proto z nabídky zmizela. (#223)
+- **§ 42 varování v přiznání u čistě OSS dobropisu.** Kontrola data zařazení opravného dokladu se spouštěla i pro dobropis, jehož záporná DPH je celá zahraniční, a tím zbytečně zpochybňovala tuzemské přiznání. Nově se vyžaduje aspoň jeden ne-OSS řádek. (#223)
+
+## [4.47.0] — 2026-07-18
+
+### Added
+
+- **Export vystavených faktur do Money S3 (Seyfor).** Vystavené faktury lze exportovat do XML pro účetnictví **Money S3** (`format=money_s3` v exportu faktur), vedle stávajícího Stereo / Pohoda / ISDOC. Oficiální veřejné XSD pro tento formát neexistuje — struktura byla odvozena z reálného exportu Money S3 a ověřena proti uživatelské příručce. (#211) Sazby DPH se přitom neváží natvrdo na aktuální 12/21, ale **odvozují se z položek dokladu**: nižší nenulová sazba jde do sníženého koše, vyšší do základního, jediná sazba se rozřadí prahem 17 %. Díky tomu projdou i doklady ze starších období s historickými sazbami (15/21 pro 2013–2023, 14/20 pro 2012, 5/22 pro 1995–2003), zatímco dřív cokoli mimo 12/21 export tvrdě shodilo. Tři a víc různých nenulových sazeb na jednom dokladu dvoukošíkový model Money S3 neumí → zůstává tvrdá chyba. (#213)
+- **iDoklad — synchronizace bankovních účtů.** Import z iDokladu má novou volbu **Bankovní účty**, která načte číselník účtů z iDokladu a bezpečně jej namapuje na aktivní účty stejné měny v MyInvoice. Účet se propojí jen při jednoznačné shodě čísla účtu / IBANu (u českého účtu se kontroluje i kód banky); neznámý nebo nejednoznačný účet se pouze označí ke kontrole (`unmatched` / `ambiguous`). Synchronizace nikdy nezakládá ani nepřepisuje lokální bankovní účet a je idempotentní. Tvoří bezpečný základ pro budoucí import bankovních pohybů z iDokladu a jejich deduplikaci vůči GPC/IMAP. (#218, migrace 0135)
+- **Daňový optimalizátor — odhad čistého příjmu za minulý měsíc.** Nová rozbalovací karta ukazuje pravděpodobný čistý příjem za poslední uzavřený kalendářní měsíc: reálné zaplacené tržby a náklady, z nichž se odhadnou odvody (anualizací × 12 přes stejnou logiku jako roční přepočet — výdajový paušál se stropem 2 M příjmu, odpočty, dětské slevy, minimální vyměřovací základy pojistného — pak vydělené 12). Čistý příjem = zisk (tržby − skutečné náklady) minus odhadnuté odvody, tj. reálná hotovost, co zbyde. Zobrazuje se vždy nezávisle na roku zvoleném v přepínači. (#217, #219)
+
+### Fixed
+
+- **iDoklad — import vydané faktury přebírá její skutečný bankovní účet.** Při více účtech téže měny import dosud vždy dosadil výchozí účet měny, takže faktura vystavená např. s účtem Fio se po importu mohla zobrazit s výchozím účtem RB. Nově se účet hledá podle historických údajů `MyAddress` konkrétního dokladu (číslo účtu + kód banky, stejná normalizace jako v bankovním modulu, kód banky umí odvodit i z českého IBANu); výchozí účet měny je jen fallback při chybějícím nebo nejednoznačném účtu. (#216)
+- **Import ISDOC 5.x.** Parser měl namespace natvrdo na 6.x (`…/namespace/2013`), takže u staršího ISDOC 5.2 (`…/namespace/invoice`) nenašel `<ID>` a spadl na zavádějící „Chybí ISDOC ID (varsymbol)", přestože doklad oba elementy obsahoval. Namespace se nově bere z kořene dokumentu (struktura čtených elementů je mezi 5.x a 6.x shodná), u skutečně neznámého namespace parser vrací jasnou hlášku. (#208)
+- **Bankovní modul u účtů se stejným číslem lišících se kódem banky (návazně na #206).** Seznam výpisů i přehled stavů na účtech (včetně měsíčních grafů) nově správně rozlišují účty se shodným číslem podle kódu banky — výpisy si drží kód banky, filtrují se i podle něj a stavy/grafy se zobrazí pro všechny účty, ne jen pro výchozí. Kontrola jednoznačnosti při přiřazení „staršího výpisu bez kódu banky" byla sjednocena do jednoho helperu. (#209, #210, #212, #214)
+
 ## [4.46.1] — 2026-07-16
 
 ### Fixed
