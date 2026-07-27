@@ -96,6 +96,8 @@ use MyInvoice\Action\PurchaseInvoice\GetPurchaseInvoiceAction;
 use MyInvoice\Action\PurchaseInvoice\PaymentQrAction;
 use MyInvoice\Action\PurchaseInvoice\PaymentOrderAction;
 use MyInvoice\Action\PurchaseInvoice\ListPurchaseInvoicesAction;
+use MyInvoice\Action\PurchaseInvoice\PurchaseInvoiceImportBatchesAction;
+use MyInvoice\Action\PurchaseInvoice\SetPurchaseInvoiceDocumentKindAction;
 use MyInvoice\Action\PurchaseInvoice\PurchaseInvoiceActivityAction;
 use MyInvoice\Action\PurchaseInvoice\ScanInboxAction;
 use MyInvoice\Action\PurchaseInvoice\SetPurchaseInvoiceExchangeRateAction;
@@ -150,7 +152,10 @@ use MyInvoice\Action\Auth\ForgotPasswordAction;
 use MyInvoice\Action\Auth\LoginAction;
 use MyInvoice\Action\Auth\LogoutAction;
 use MyInvoice\Action\Auth\MeAction;
+use MyInvoice\Action\Auth\MfaStepUpAction;
+use MyInvoice\Action\Auth\PasskeyAction;
 use MyInvoice\Action\Auth\ResetPasswordAction;
+use MyInvoice\Action\Auth\SessionAction;
 use MyInvoice\Action\Auth\SetupAction;
 use MyInvoice\Action\Auth\SetupAresLookupAction;
 use MyInvoice\Action\Auth\SetupCrpDphLookupAction;
@@ -202,6 +207,7 @@ final class Routes
             $g->post('/setup-crpdph-lookup', SetupCrpDphLookupAction::class);  // public proxy do registru plátců DPH (účty z DIČ)
             $g->post('/setup-sample',    SetupSampleAction::class);         // public sample data generator (jen pokud nejsou data)
             $g->post('/login',           LoginAction::class);
+            $g->post('/webauthn/login/options', [LoginAction::class, 'passkeyOptions']);
             $g->post('/logout',          LogoutAction::class);
             $g->get ('/me',              MeAction::class);
             $g->get ('/api-me',          ApiMeAction::class);  // connection-test pro bearer i session
@@ -212,6 +218,23 @@ final class Routes
             $g->get ('/totp/status',     [TotpAction::class, 'status']);
             $g->post('/totp/setup',      [TotpAction::class, 'setup']);
             $g->post('/totp/enable',     [TotpAction::class, 'enable']);
+            // WebAuthn/passkeys — interní session-only self-service API
+            $g->get   ('/webauthn/credentials',              [PasskeyAction::class, 'credentials']);
+            $g->post  ('/webauthn/register/options',          [PasskeyAction::class, 'registerOptions']);
+            $g->post  ('/webauthn/register/verify',           [PasskeyAction::class, 'registerVerify']);
+            $g->post  ('/webauthn/login/verify',              [PasskeyAction::class, 'loginVerify']);
+            $g->post  ('/webauthn/step-up/options',           [PasskeyAction::class, 'stepUpOptions']);
+            $g->post  ('/webauthn/step-up/verify',            [PasskeyAction::class, 'stepUpVerify']);
+            $g->patch ('/webauthn/credentials/{id:[0-9]+}',   [PasskeyAction::class, 'rename']);
+            $g->delete('/webauthn/credentials/{id:[0-9]+}',   [PasskeyAction::class, 'revoke']);
+            $g->post  ('/mfa/step-up/totp',                   [MfaStepUpAction::class, 'totp']);
+            $g->get   ('/session/status',                     [SessionAction::class, 'status']);
+            $g->post  ('/session/activity',                   [SessionAction::class, 'activity']);
+            $g->post  ('/session/lock',                       [SessionAction::class, 'lock']);
+            $g->get   ('/session/lock-preference',            [SessionAction::class, 'lockPreference']);
+            $g->put   ('/session/lock-preference',            [SessionAction::class, 'updateLockPreference']);
+            $g->post  ('/session/unlock/options',             [SessionAction::class, 'unlockOptions']);
+            $g->post  ('/session/unlock/verify',              [SessionAction::class, 'unlockVerify']);
             // API tokeny (Personal Access Tokens) — správa jen ze session auth
             $g->get   ('/tokens',                  ListTokensAction::class);
             $g->post  ('/tokens',                  CreateTokenAction::class);
@@ -357,6 +380,7 @@ final class Routes
         // scan-inbox je admin/accountant only (check v Action).
         $app->post   ('/api/purchase-invoices/scan-inbox',                ScanInboxAction::class);
         $app->get    ('/api/purchase-invoices/export',                     ExportPurchaseInvoicesAction::class);
+        $app->get    ('/api/purchase-invoices/import-batches',             PurchaseInvoiceImportBatchesAction::class);
         $app->get    ('/api/purchase-invoices',                           ListPurchaseInvoicesAction::class);
         $app->post   ('/api/purchase-invoices',                           CreatePurchaseInvoiceAction::class);
         $app->get    ('/api/purchase-invoices/{id:[0-9]+}',                GetPurchaseInvoiceAction::class);
@@ -365,6 +389,7 @@ final class Routes
         $app->put    ('/api/purchase-invoices/{id:[0-9]+}/items',          SetPurchaseInvoiceItemsAction::class);
         $app->post   ('/api/purchase-invoices/{id:[0-9]+}/exchange-rate', SetPurchaseInvoiceExchangeRateAction::class);
         $app->post   ('/api/purchase-invoices/{id:[0-9]+}/transition',     TransitionPurchaseInvoiceStatusAction::class);
+        $app->post   ('/api/purchase-invoices/{id:[0-9]+}/document-kind',   SetPurchaseInvoiceDocumentKindAction::class);
         $app->post   ('/api/purchase-invoices/{id:[0-9]+}/dismiss-extraction-warning', DismissExtractionWarningAction::class);
         // Propojení se zálohovou fakturou (advance) — proti dvojímu započtení nákladu
         $app->get    ('/api/purchase-invoices/{id:[0-9]+}/advance-candidates', AdvanceCandidatesAction::class);
