@@ -16,7 +16,7 @@ use Psr\Http\Message\ServerRequestInterface as Request;
  *
  * GET /api/branding/logo[?supplier_id=N]
  *   - aktuální firma = SupplierScopeMiddleware (header X-Supplier-Id nebo ?supplier_id=),
- *     navíc přescopováno SupplierAccessMiddleware → uživatel dostane jen povolenou firmu.
+ *     které přes SupplierAccessResolver vrátí 403 mimo membership uživatele.
  *   - bez loga / nevalidní cesta → 404 (frontend pak ukáže fallback MyInvoice).
  *
  * Izolovaná custom akce — žádný háček do upstream souborů kromě 1 řádku v Routes.php.

@@ -33,35 +33,23 @@ ber upstream stranu fontů/patičky, náš zůstává jen LAYOUT (pay-band, meta
 ## 3. CSS utilita
 - `web/src/styles/main.css` — `@layer utilities { .uppercase { width: 100% } }`.
 
-## 4. Per-firemní přístup uživatelů (feature `access.per_supplier_enabled`)
-> Izolováno v namespace `MyInvoice\Access` (složka `api/src/Access/`). Fail-open, default OFF.
-> Spec: `docs/spec-per-firemni-pristup.md`.
+## 4. ~~Per-firemní přístup uživatelů~~ → PŘEVZATO UPSTREAMEM (4.52.0)
+> **Tato customizace už neexistuje.** Upstream 4.52.0 (commit `0dbd32d3`, issue #246) dodal
+> vlastní, plnohodnotnější per-firemní přístup, tak jsme na něj přešli a naši vrstvu smazali.
 
-**Nové soubory (0 konfliktů):**
-- `db/migrations/0107_user_supplier.sql` — tabulka `user_supplier` + grandfather.
-  > POZN.: upstream 4.22.0 přidal taky `0107_purchase_invoice_payment_account.sql` → dva soubory
-  > s prefixem 0107 koexistují. NEPŘEČÍSLOVÁVAT náš (už je aplikovaný; runner trackuje podle celého
-  > názvu). Re-apply by přes `INSERT IGNORE … CROSS JOIN` znovu udělil všem všechny firmy = rozbil
-  > by per-firma omezení. Příští naše migrace ber od 0108+.
-- `api/src/Access/SupplierAccess.php` — služba (allowedIds/canAccess, fail-open).
-- `api/src/Access/SupplierAccessMiddleware.php` — vynucení scope (po SupplierScope).
-- `web/src/pages/admin/...` — UI přiřazení firem (viz commit).
-- `api/tests/.../SupplierAccessTest.php` — testy.
+**Odstraněno při merge 4.53.2:** `api/src/Access/` (SupplierAccess + SupplierAccessMiddleware),
+`api/tests/Integration/Access/SupplierAccessTest.php`, `docs/spec-per-firemni-pristup.md`,
+flag `access.per_supplier_enabled` v `cfg.sample.php` a všechny háčky (Bootstrap, MeAction,
+UserAdminAction, `web/src/api/admin.ts`, `web/src/pages/admin/Users.vue`) — ty jsou nyní 1:1 upstream.
 
-**Háčky do upstreamu (revert při migraci na upstream řešení):**
-| Soubor | Změna |
-|---|---|
-| `api/src/Bootstrap.php` | `+ $app->add(\MyInvoice\Access\SupplierAccessMiddleware::class)` mezi ApiScope a SupplierScope |
-| `api/src/Action/Auth/MeAction.php` | inject `SupplierAccess`, seznam firem scoped přes `allowedIds()` (WHERE id IN …) |
-| `api/src/Action/Admin/UserAdminAction.php` | `supplier_ids` v list/create/update/fetchUser + helpery `suppliersOf`/`setSuppliers` |
-| `cfg.sample.php` | sekce `'access' => ['per_supplier_enabled' => false]` |
-| FE správa uživatelů (`web/src/pages/admin/Users*.vue` + `web/src/api/admin.ts`) | multiselect firem |
+**Přenos dat:** `db/migrations/0150_fork_user_supplier_to_upstream.sql` překlopí řádky
+`user_supplier` → `user_suppliers` (upstream 0148) s `role = NULL` (= zdědit globální roli, což
+odpovídá naší tabulce, která override neuměla) a legacy tabulku dropne. Migrace 0107 / 0115_0 / 0123
+zůstávají v repu kvůli historické konzistenci — na nové instalaci tabulku založí a 0150 ji zase zruší.
 
-**Opuštění:** `cfg…access.per_supplier_enabled => false` → okamžitě allow-all. Pak volitelně
-`DROP TABLE user_supplier`, smaž `api/src/Access/`, FE, testy a revert háčků výše.
-
-**Migrace na upstream (kdyby dodělali):** flag OFF → mapping migrace
-`INSERT INTO <jejich_tabulka> SELECT … FROM user_supplier` (nebo rename) → revert háčků.
+**Co tím fork získal:** role override per firmu (`accountant`/`readonly`), tvrdé 403
+`forbidden_supplier` místo našeho fail-open, scope i na PAT tokenech, 11 integračních testů.
+Sémantika „0 řádků = bez omezení" zůstala stejná, takže se pro uživatele nic nemění.
 
 ## 5. Logo firmy v hlavičce SPA (místo „MyInvoice.cz")
 > Zobrazí `supplier.logo_path` aktuální firmy vlevo nahoře; když logo není → fallback MyInvoice.
@@ -69,7 +57,8 @@ ber upstream stranu fontů/patičky, náš zůstává jen LAYOUT (pay-band, meta
 
 **Nové soubory (0 konfliktů):**
 - `api/src/Action/Branding/SupplierLogoAction.php` — `GET /api/branding/logo` servíruje obrázek
-  aktuální firmy (scoped přes SupplierScope + náš SupplierAccess); bez loga → 404.
+  aktuální firmy (scoped přes SupplierScope, který přes SupplierAccessResolver vrátí 403 mimo
+  membership uživatele); bez loga → 404.
 
 **Háčky do upstreamu:**
 | Soubor | Změna |
@@ -117,16 +106,17 @@ POZN.: `SupplierLogoAction` má `X-Content-Type-Options: nosniff` + CSP `sandbox
 | `api/templates/invoice/invoice.twig` | `.order-ref` v hlavičkové `.meta` buňce |
 | `styles/invoice.css` | `.order-ref` styl |
 
-**POZN.:** příští migrace ber od **0124** (upstream zabral 0110–0122). Naše migrace: `0107_user_supplier`,
-`0109_invoice_order_number`, `0115_0_user_supplier_drop_fk`, `0123_user_supplier_supplier_id_int`. Sdílené
-prefixy s upstreamem koexistují (runner `sort(SORT_STRING)` podle celého názvu — NEPŘEČÍSLOVÁVAT aplikované):
-`0107`, `0109`, `0115` (náš `0115_0` se řadí PŘED upstream `0115_supplier_id_int`).
+**POZN.:** příští migrace ber od **0151** (upstream zabral po 0149). Naše migrace: `0107_user_supplier`,
+`0109_invoice_order_number`, `0115_0_user_supplier_drop_fk`, `0123_user_supplier_supplier_id_int`,
+`0150_fork_user_supplier_to_upstream`. Sdílené prefixy s upstreamem koexistují (runner
+`sort(SORT_STRING)` podle celého názvu — NEPŘEČÍSLOVÁVAT aplikované): `0107`, `0109`, `0115`
+(náš `0115_0` se řadí PŘED upstream `0115_supplier_id_int`), `0123`, `0130`, `0140`/`0141`, `0145`.
 
-**supplier_id → INT (od upstream 4.x, migrace 0115):** upstream rozšířil `supplier.id` z TINYINT na INT
-a dropuje/re-přidává jen SVÝCH 36 FK — naši `fk_us_supplier` (user_supplier) NEzná, takže by `MODIFY
-supplier.id INT` spadl. Řeší to náš pár: `0115_0_user_supplier_drop_fk.sql` (drop FK PŘED upstream 0115)
-+ `0123_user_supplier_supplier_id_int.sql` (MODIFY supplier_id INT + re-add FK PO 0115). **Při dalším
-upstream rozšíření tenant klíče tohle zopakuj** (drop-before / readd-after pro `user_supplier`).
+**supplier_id → INT (historie, migrace 0115):** upstream rozšířil `supplier.id` z TINYINT na INT
+a dropoval/re-přidával jen SVÝCH 36 FK — naši `fk_us_supplier` (user_supplier) NEznal, takže by `MODIFY
+supplier.id INT` spadl. Řešil to náš pár `0115_0` (drop FK před) + `0123` (MODIFY + re-add FK po).
+Od 0150 už `user_supplier` neexistuje (§4), takže **tenhle problém se opakovat nemůže** — vlastní FK
+na `supplier.id` už nemáme. Kdyby nějaká vznikla, zopakuj stejný drop-before / readd-after vzorec.
 
 **Opuštění:** `DROP COLUMN order_number` + revert háčků výše.
 

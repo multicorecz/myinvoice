@@ -2,19 +2,15 @@
 import { ref, onMounted, reactive, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { RouterLink } from 'vue-router'
-import { adminApi, type AdminUser } from '@/api/admin'
+import { adminApi, type AdminUser, type UserSupplierAssignment } from '@/api/admin'
+import { suppliersApi } from '@/api/suppliers'
 import { useAuthStore } from '@/stores/auth'
-import { useSupplierStore } from '@/stores/supplier'
 import { useToast } from '@/composables/useToast'
 import { useHotkey } from '@/composables/useHotkey'
 
-const { t, locale } = useI18n()
+const { t } = useI18n()
 const auth = useAuthStore()
-const supplierStore = useSupplierStore()
 const toast = useToast()
-// CUSTOM(fork): popisky inline (bez zásahu do i18n)
-const accessLabel = computed(() => locale.value === 'en' ? 'Company access' : 'Přístup k firmám')
-const adminAllLabel = computed(() => locale.value === 'en' ? 'Admin has access to all companies' : 'Admin má přístup ke všem firmám')
 
 const users = ref<AdminUser[]>([])
 const loading = ref(false)
@@ -36,28 +32,73 @@ const form = reactive({
   locale: 'cs' as 'cs' | 'en',
   is_active: true,
   password: '',
-  supplier_ids: [] as number[],   // CUSTOM(fork): přiřazené firmy
 })
-function toggleSupplier(id: number) {
-  const i = form.supplier_ids.indexOf(id)
-  if (i >= 0) form.supplier_ids.splice(i, 1)
-  else form.supplier_ids.push(id)
-}
 
 async function load() {
   loading.value = true
   try { users.value = await adminApi.listUsers() }
   finally { loading.value = false }
 }
-onMounted(load)
+onMounted(() => {
+  load()
+  loadSuppliers()
+})
+
+// ── Přiřazení firem (user_suppliers) — checkbox list v edit modalu ──────────
+// Prázdný výběr = bez omezení (BC), role null = zdědit globální users.role.
+const allSuppliers = ref<Array<{ id: number; name: string }>>([])
+const assignRows = ref<Array<{ id: number; name: string }>>([])
+const assign = ref<Record<number, { checked: boolean; role: 'accountant' | 'readonly' | null }>>({})
+const assignLoaded = ref(false)
+let assignOriginal = ''
+
+async function loadSuppliers() {
+  try {
+    const list = await suppliersApi.list()
+    allSuppliers.value = list.map(s => ({ id: s.id, name: s.display_name || s.company_name }))
+  } catch { allSuppliers.value = [] }
+}
+
+function assignmentsPayload(): Array<{ supplier_id: number; role: 'accountant' | 'readonly' | null }> {
+  return assignRows.value
+    .filter(r => assign.value[r.id]?.checked)
+    .map(r => ({ supplier_id: r.id, role: assign.value[r.id].role }))
+}
+function serializeAssignments(): string {
+  return JSON.stringify(assignmentsPayload())
+}
+
+async function loadAssignments(userId: number) {
+  assignLoaded.value = false
+  try {
+    const list: UserSupplierAssignment[] = await adminApi.listUserSuppliers(userId)
+    // Řádky = všechny firmy viditelné adminem + případná přiřazení mimo ně
+    // (jinak by se při PUT replace ztratila).
+    const rows = [...allSuppliers.value]
+    const rec: Record<number, { checked: boolean; role: 'accountant' | 'readonly' | null }> = {}
+    for (const s of rows) rec[s.id] = { checked: false, role: null }
+    for (const a of list) {
+      if (!(a.supplier_id in rec)) rows.push({ id: a.supplier_id, name: a.name })
+      rec[a.supplier_id] = { checked: true, role: a.role }
+    }
+    assignRows.value = rows
+    assign.value = rec
+    assignOriginal = serializeAssignments()
+    assignLoaded.value = true
+  } catch {
+    toast.error(t('users.suppliers_load_failed'))
+  }
+}
 
 function openCreate() {
-  Object.assign(form, { id: null, email: '', name: '', role: 'readonly', locale: 'cs', is_active: true, password: '', supplier_ids: [] })
+  Object.assign(form, { id: null, email: '', name: '', role: 'readonly', locale: 'cs', is_active: true, password: '' })
+  assignLoaded.value = false
   showForm.value = true
 }
 function openEdit(u: AdminUser) {
-  Object.assign(form, { id: u.id, email: u.email, name: u.name, role: u.role, locale: u.locale, is_active: u.is_active, password: '', supplier_ids: [...(u.supplier_ids ?? [])] })
+  Object.assign(form, { id: u.id, email: u.email, name: u.name, role: u.role, locale: u.locale, is_active: u.is_active, password: '' })
   showForm.value = true
+  loadAssignments(u.id)
 }
 
 async function save() {
@@ -74,21 +115,21 @@ async function save() {
     }
   }
   try {
-    // CUSTOM(fork): u role 'admin' přiřazení neukládáme (vidí vše)
-    const supplierIds = form.role === 'admin' ? [] : form.supplier_ids
     if (form.id === null) {
       if (!form.password) { error.value = t('users.password_required'); return }
       await adminApi.createUser({
         email: form.email, name: form.name, role: form.role, locale: form.locale, password: form.password,
-        supplier_ids: supplierIds,
       })
     } else {
       const payload: Record<string, unknown> = {
         name: form.name, role: form.role, locale: form.locale, is_active: form.is_active,
-        supplier_ids: supplierIds,
       }
       if (form.password) payload.password = form.password
       await adminApi.updateUser(form.id, payload)
+      // Přiřazení firem — PUT jen když se výběr reálně změnil (replace sémantika)
+      if (assignLoaded.value && serializeAssignments() !== assignOriginal) {
+        await adminApi.setUserSuppliers(form.id, assignmentsPayload())
+      }
     }
     showForm.value = false
     await load()
@@ -250,19 +291,6 @@ function roleBadge(role: string): string {
               </select>
             </div>
           </div>
-          <!-- CUSTOM(fork): přístup k firmám (per-firemní přístup) -->
-          <div>
-            <label class="block text-sm font-medium text-neutral-700 mb-1">{{ accessLabel }}</label>
-            <p v-if="form.role === 'admin'" class="text-xs text-neutral-500">{{ adminAllLabel }}</p>
-            <div v-else class="max-h-40 overflow-y-auto border border-neutral-300 rounded-md p-2 space-y-1">
-              <label v-for="s in supplierStore.availableSuppliers" :key="s.id"
-                class="flex items-center gap-2 text-sm cursor-pointer">
-                <input type="checkbox" :checked="form.supplier_ids.includes(s.id)" @change="toggleSupplier(s.id)"
-                  class="rounded border-neutral-300 text-primary-600" />
-                {{ s.company_name }}
-              </label>
-            </div>
-          </div>
           <div v-if="form.id !== null">
             <label class="flex items-center gap-2 text-sm">
               <input v-model="form.is_active" type="checkbox" class="rounded border-neutral-300 text-primary-600" />
@@ -276,6 +304,27 @@ function roleBadge(role: string): string {
             <input v-model="form.password" type="password" autocomplete="new-password"
               class="w-full h-10 px-3 border border-neutral-300 rounded-md text-sm font-mono" />
             <p class="text-xs text-neutral-500 mt-1">{{ t('users.password_min') }}</p>
+          </div>
+          <!-- Přiřazení firem (user_suppliers) — jen u existujícího uživatele -->
+          <div v-if="form.id !== null && assignLoaded && assignRows.length > 0" class="border-t border-neutral-200 pt-3">
+            <label class="block text-sm font-medium text-neutral-700 mb-1">{{ t('users.suppliers_title') }}</label>
+            <p class="text-xs text-neutral-500 mb-2">{{ t('users.suppliers_hint') }}</p>
+            <div class="max-h-48 overflow-y-auto space-y-1.5 border border-neutral-200 rounded-md p-2">
+              <div v-for="s in assignRows" :key="s.id" class="flex items-center gap-2">
+                <label class="flex items-center gap-2 text-sm flex-1 min-w-0 cursor-pointer">
+                  <input v-model="assign[s.id].checked" type="checkbox" class="rounded border-neutral-300 text-primary-600" />
+                  <span class="truncate">{{ s.name }}</span>
+                </label>
+                <select v-if="assign[s.id].checked" v-model="assign[s.id].role"
+                  :title="t('users.supplier_role_title')"
+                  class="h-8 px-2 border border-neutral-300 rounded-md text-xs bg-surface shrink-0">
+                  <option :value="null">{{ t('users.supplier_role_inherit') }}</option>
+                  <option value="accountant">accountant</option>
+                  <option value="readonly">readonly</option>
+                </select>
+              </div>
+            </div>
+            <p v-if="form.role === 'admin'" class="text-xs text-neutral-500 mt-1">{{ t('users.suppliers_admin_note') }}</p>
           </div>
           <div v-if="error" class="text-sm text-danger-500">{{ error }}</div>
           <div class="flex justify-end gap-2 pt-2">

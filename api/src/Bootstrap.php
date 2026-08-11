@@ -99,6 +99,9 @@ final class Bootstrap
             Connection::class      => fn (ContainerInterface $c) => new Connection($c->get(Config::class), $c->get(LoggerInterface::class)),
             RedisProbe::class      => fn (ContainerInterface $c) => new RedisProbe($c->get(Config::class)),
             RedisFactory::class    => fn (ContainerInterface $c) => new RedisFactory($c->get(Config::class)),
+            // Nativní updater si cesty (root / data dir) rozřeší sám; explicitní bind,
+            // ať PHP-DI nemusí hádat volitelné string parametry konstruktoru.
+            \MyInvoice\Service\Update\NativeUpdateService::class => fn () => new \MyInvoice\Service\Update\NativeUpdateService(),
             PasskeyService::class  => fn (ContainerInterface $c) => new PasskeyService(
                 $c->get(WebAuthnConfigProvider::class),
             ),
@@ -189,7 +192,6 @@ final class Bootstrap
         $app->add($container->get(CsrfMiddleware::class));           // potřebuje session z Auth (bearer skip)
         $app->add($container->get(RateLimitMiddleware::class));      // chrání forgot/setup/login/ARES + per-user/per-token limity
         $app->add($container->get(ApiScopeMiddleware::class));       // bearer-only: enforce read / read_write scope
-        $app->add($container->get(\MyInvoice\Access\SupplierAccessMiddleware::class)); // CUSTOM(fork): per-firemní přístup — běží PO SupplierScope, viz CUSTOM-PATCHES.md
         $app->add($container->get(SupplierScopeMiddleware::class));  // multi-supplier scope (X-Supplier-Id / token's supplier_id)
         $app->add($container->get(RoleMiddleware::class));           // RBAC — kontrola role po Auth
         $app->add($container->get(RequireMfaMiddleware::class));     // assurance + povinný MFA setup (bearer skip)

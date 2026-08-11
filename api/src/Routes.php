@@ -50,6 +50,7 @@ use MyInvoice\Action\Admin\UserAdminAction;
 use MyInvoice\Action\Settings\EmailBrandingAction;
 use MyInvoice\Action\Settings\BrandingProfilesAction;
 use MyInvoice\Action\Settings\EmailProfilesAction;
+use MyInvoice\Action\Settings\NaceCodesAction;
 use MyInvoice\Action\Settings\PdfSigningDiagnosticsAction;
 use MyInvoice\Action\Settings\SettingsAction;
 use MyInvoice\Action\Settings\SignatureDocumentSelectionAction;
@@ -62,6 +63,7 @@ use MyInvoice\Action\Dashboard\PurchaseSummaryAction;
 use MyInvoice\Action\Invoice\CancelInvoiceAction;
 use MyInvoice\Action\Invoice\CreateInvoiceAction;
 use MyInvoice\Action\Invoice\DeleteInvoiceAction;
+use MyInvoice\Action\Invoice\RebuildInvoiceSnapshotsAction;
 use MyInvoice\Action\Invoice\ExportCsvAction;
 use MyInvoice\Action\Invoice\ExportSelectedPdfAction;
 use MyInvoice\Action\Invoice\InvoiceActivityAction;
@@ -192,6 +194,7 @@ final class Routes
 
         // Admin — kontrola a upgrade nové verze (M9, issue „Kontrola a upgrade")
         $app->get  ('/api/admin/update/status',  [UpdateAction::class, 'status']);
+        $app->get  ('/api/admin/update/preflight', [UpdateAction::class, 'preflight']);
         $app->post ('/api/admin/update/refresh', [UpdateAction::class, 'refresh']);
         $app->post ('/api/admin/update/trigger', [UpdateAction::class, 'trigger']);
         $app->post ('/api/admin/update/cancel',  [UpdateAction::class, 'cancel']);
@@ -228,6 +231,9 @@ final class Routes
             $g->patch ('/webauthn/credentials/{id:[0-9]+}',   [PasskeyAction::class, 'rename']);
             $g->delete('/webauthn/credentials/{id:[0-9]+}',   [PasskeyAction::class, 'revoke']);
             $g->post  ('/mfa/step-up/totp',                   [MfaStepUpAction::class, 'totp']);
+            $g->post  ('/mfa/step-up/recovery',               [MfaStepUpAction::class, 'recovery']);
+            $g->get   ('/mfa/recovery-codes',                 [\MyInvoice\Action\Auth\MfaRecoveryCodeAction::class, 'status']);
+            $g->post  ('/mfa/recovery-codes',                 [\MyInvoice\Action\Auth\MfaRecoveryCodeAction::class, 'generate']);
             $g->get   ('/session/status',                     [SessionAction::class, 'status']);
             $g->post  ('/session/activity',                   [SessionAction::class, 'activity']);
             $g->post  ('/session/lock',                       [SessionAction::class, 'lock']);
@@ -347,6 +353,8 @@ final class Routes
         $app->delete ('/api/invoices/{id:[0-9]+}/payments/{paymentId:[0-9]+}', DeletePaymentAction::class);
         $app->post   ('/api/invoices/{id:[0-9]+}/payments/{paymentId:[0-9]+}/tax-document', CreatePaymentTaxDocumentAction::class);
         $app->post   ('/api/invoices/{id:[0-9]+}/cancel',    CancelInvoiceAction::class);
+        // Obnova snapshotů klienta/dodavatele z live dat (admin, i u vystavené) — BUG 5.
+        $app->post   ('/api/invoices/{id:[0-9]+}/rebuild-snapshots', RebuildInvoiceSnapshotsAction::class);
         $app->get    ('/api/invoices/{id:[0-9]+}/isdoc',     InvoiceIsdocAction::class);
         $app->get    ('/api/invoices/{id:[0-9]+}/pdf',       PdfAction::class);
         $app->get    ('/api/invoices/{id:[0-9]+}/pdfs',      ListPdfsAction::class);
@@ -565,6 +573,9 @@ final class Routes
         $app->post   ('/api/admin/users',           [UserAdminAction::class, 'create']);
         $app->put    ('/api/admin/users/{id:[0-9]+}', [UserAdminAction::class, 'update']);
         $app->delete ('/api/admin/users/{id:[0-9]+}', [UserAdminAction::class, 'delete']);
+        // Membership uživatel ↔ supplier (jemný tenant přístup, migrace 0148)
+        $app->get    ('/api/admin/users/{id:[0-9]+}/suppliers', [\MyInvoice\Action\Admin\UserSupplierAdminAction::class, 'list']);
+        $app->put    ('/api/admin/users/{id:[0-9]+}/suppliers', [\MyInvoice\Action\Admin\UserSupplierAdminAction::class, 'replace']);
 
         // Approval inbox (admin only) — globální seznam schvalování
         $app->get    ('/api/admin/approvals',       ApprovalListAction::class);
@@ -586,6 +597,7 @@ final class Routes
         $app->get ('/api/settings/supplier',                [SettingsAction::class, 'getSupplier']);
         $app->put ('/api/settings/supplier',                [SettingsAction::class, 'updateSupplier']);
         $app->put ('/api/settings/supplier/invoice-counter', SupplierInvoiceCounterAction::class);
+        $app->get ('/api/settings/nace-codes',              NaceCodesAction::class);
         $app->get    ('/api/settings/email-profiles',       [EmailProfilesAction::class, 'list']);
         $app->post   ('/api/settings/email-profiles',       [EmailProfilesAction::class, 'create']);
         $app->post   ('/api/settings/email-profiles/test',  [EmailProfilesAction::class, 'testDraft']);
