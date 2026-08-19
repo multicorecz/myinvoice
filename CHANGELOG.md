@@ -7,6 +7,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.55.0] — 2026-08-19
+
+### Added
+
+- **Přechod na MyÚčto jedním tlačítkem (Systém → Přechod na MyÚčto).** MyÚčto.cz je nástupce MyInvoice od téhož autora, postavený na stejném základu, a jeho migrace číslované 1000+ navazují na schéma MyInvoice. Přechod je proto **in-place**: vymění se kód a nad stávající databází se dojedou zbylé migrace. Data se nikam nekopírují a druhá databáze se nezakládá. Stránka nejdřív vysvětlí, co MyÚčto je a co zůstává zdarma, vyžádá si vědomé potvrzení zálohy — tohle je jediná operace v aplikaci, kterou nelze vzít zpět jinak než obnovou dumpu — a teprve pak pustí přechod na pozadí s průběhem po krocích. V Dockeru přechod provádí host, protože kontejner nemůže přepsat vlastní image; aplikace pro něj vypíše přesné příkazy.
+- **Kontrola prostředí před přechodem.** Preflight dosud ověřoval jen to, jestli update *proběhne* (zlib, práva, místo na disku), ne jestli výsledek *poběží*. U nástupce s vyššími nároky je to rozdíl mezi „nespustí se" a „skončí půl na půl": soubory by se vyměnily, migrace spadly a instalace zůstala s novým kódem nad starým schématem. Stránka teď ukazuje checklist s naměřenými hodnotami — verze PHP, sada rozšíření, verze MariaDB, PHP CLI, práva zápisu, volné místo — a to i když všechno sedí. Před nevratnou operací je „co se ověřilo a s jakou hodnotou" ta informace, podle které se člověk rozhoduje.
+- **`cmd/docker-upgrade-to-myucto.ps1`** — PowerShell varianta přechodového skriptu pro Windows hosty bez bashe. Dělá totéž a ve stejném pořadí jako `.sh`.
+
+### Changed
+
+- **Účetnictví se po přechodu vypne.** MyÚčto zavádí přepínač „Vést účetnictví" s defaultem zapnuto, což je správně pro firmu, která v MyÚčtu účtuje, ale ne pro instalaci, která právě přišla z MyInvoice a účetnictví nikdy nevedla. Ta by dostala plné účetní menu a k tomu režim „daňová evidence", tedy default sloupce — u s.r.o. rovnou špatně, protože ta vede podvojné účetnictví ze zákona. Přechod agendu skryje a volbu (vést/nevést a v jakém režimu) nechá na vědomém rozhodnutí. Platí pro nativní i Docker cestu.
+- **Přechod si zjistí nejnovější verzi MyÚčta až při spuštění.** Dosud četl z cache, která se plní ruční kontrolou a jednou za den — instalace, která se dívala včera, tak nasadila včerejší verzi a o novější se dozvěděla až po nevratné operaci. Když se ověření nepovede, jede se dál z cache, ale řekne se to.
+- **Docker: `mariadb:11.8` místo plovoucího `mariadb:11`** a `max_allowed_packet` 64 MB. MyÚčto vyžaduje MariaDB 11.8 a výš; plovoucí tag dnes vede na 11.8, ale instalace založená loni běží klidně na 11.4 a `docker compose up` na už stažený image nesáhne. Default `max_allowed_packet` 16 MB navíc neunese dump databáze ani přílohu do 50 MB — kontrola prostředí to hlásila jako nález.
+
+### Fixed
+
+- **Okno výměny souborů a migrací odpovídá 503, ne fatálem.** Aktualizace vyměňuje přes deset tisíc souborů in-place nad běžící instalací a hned poté posouvá schéma. Celé to okno trvá jednotky minut a instalace je po tu dobu vnitřně nekonzistentní — nový kód odkazuje na třídu, jejíž soubor ještě nedorazil, nebo se ptá na tabulku, kterou založí až migrace. Každý request, který do toho okna spadl, končil hláškou „Backend selhal při startu". Nově se před výměnou zakládá značka údržby a requesty dostanou 503 „probíhá aktualizace"; značka expiruje, aby spadlý worker nedržel instalaci dole navěky, a maže se i po neúspěchu, takže 503 nepřežije rollback.
+- **Stránka přechodu pozná, že pod ní aplikace zmizela.** Průběh se čte pollingem, jenže od výměny souborů se není koho ptát: nejdřív brána údržby vrací 503 a pak zmizí i celá routa, protože nástupce ji nemá. Stránka proto zůstávala viset na posledním kroku („krok 5 z 9") a vypadalo to jako zásek, přestože přechod v pořádku doběhl. Nově se obě fáze pojmenují a po dokončení nabídne stránka přechod do MyÚčta — na přehled, ne reloadem adresy, kterou už nástupce nemá.
+- **Migrace 1137 neshodí přechod z MyInvoice.** `ALTER TABLE supplier MODIFY COLUMN data_box_type` nemá variantu `IF EXISTS`, jenže MyInvoice ten sloupec zahodil vlastní migrací 0140. Na instalaci přicházející z MyInvoice migrace spadla na chybu 1054 a upgrade se zastavil uprostřed. (Opraveno na straně MyÚčta, vydáno v 5.16.0.)
+- **Health check přechodu nezávisí na překladu cest.** Na Windows v Git Bash končil `curl -o /dev/null` chybou zápisu, i když server odpověděl 200 — skript pak po pěti minutách ohlásil, že aplikace nenaběhla, a nedošel na krok, který vypíná účetnictví.
+
+## [4.54.0] — 2026-08-14
+
+### Changed
+
+- **Odkaz na MyÚčto v patičce nově nejdřív vysvětlí, o co jde.** Tlačítko *MyÚčto — přejděte na novější systém* dosud odesílalo rovnou na cizí web, aniž by kdekoliv zaznělo, co MyÚčto je a proč by k němu měl uživatel jít. Nově se otevře okno, které řekne, že MyÚčto je přímý nástupce MyInvoice od stejného autora s přibližně trojnásobkem funkcí — a hlavně že **všechno, co je zdarma v MyInvoice, zůstává zdarma i tam**. Vypíše, v čem je MyÚčto dál (modernější rozhraní, více AI poskytovatelů na výběr, AI integrace přes MCP server, úplnější dokumentace, lépe ověřené DPH, kontrolní i souhrnné hlášení) i co je za volitelný poplatek navíc (podvojné účetnictví, sklady, e-shop; mzdy se připravují). Teprve z tohoto okna vedou odkazy na GitHub a MyÚčto.cz. Česky i anglicky.
+
+### Removed
+
+- **Odkaz „Chcete jinou funkci?" z patičky zmizel.** Okno s nabídkou zakázkového vývoje od MyWebdesign.cz se z aplikace odstranilo včetně odkazu v patičce — poptávky vyřizuje web studia. V patičce tak zůstává *Podpořte autora* a odkaz na MyÚčto.
+
+## [4.53.3] — 2026-08-13
+
+### Fixed
+
+- **Účetní nemohl spravovat pravidelnou fakturaci.** Uživatel s rolí *účetní* si šablonu pravidelné faktury otevřel i vyplnil, ale uložení skončilo hláškou o chybějícím oprávnění — a stejně dopadlo pozastavení, obnovení, smazání i ruční spuštění. Server totiž u pravidelné fakturace povoloval účetnímu jen čtení, přestože aplikace i manuál tuhle agendu účetnímu přiznávají. Nově s ní účetní pracuje v plném rozsahu, práva správce ani role *jen pro čtení* se nemění. (#263, díky @blondak)
+- **Přílohy přijatých faktur se z Fakturoidu nikdy nestáhly.** Import s volbou „stahovat přílohy" u přijatých faktur (výdajů) doklad založil, ale originální PDF od dodavatele k němu nepřiložil. Chyba byla navíc tichá — import skončil bez jediné chyby v protokolu, takže to vypadalo, že přílohy prostě nejsou. MyInvoice hledal přílohu na místě, které Fakturoid ve své odpovědi neposílá; nově ji bere ze správného seznamu příloh včetně původního názvu souboru. Přijaté faktury z Fakturoidu tak dorazí i s dokladem, stejně jako u iDokladu. (#261, díky @judzi)
+- **Účetní nemohl spustit import dokladů.** Nahrání dávky Pohoda XML / ISDOC / PDF, sken složky s přijatými fakturami, spuštění importu z iDokladu nebo Fakturoidu i zrušení běžícího importu — všechno účetnímu skončilo na chybějícím oprávnění, ačkoliv manuál import účetnímu slibuje. Import je práce s daty, ne konfigurace, takže ho účetní nově spouští i řídí a v menu na něj má odkaz (*Prodej → Import vystavených*, *Nákup → Import přijatých*). Nastavení integrací, tedy API klíče k iDokladu, Fakturoidu a AI, zůstává vyhrazené správci; role *jen pro čtení* k importům nemá přístup dál.
+
+### Security
+
+- **Přílohy z Fakturoidu se stahují jen z adres Fakturoidu.** Odkaz na přílohu bere MyInvoice z odpovědi Fakturoid API a stahuje ho s přihlašovacím údajem účtu. Kdyby taková adresa mířila jinam, odešel by přístupový token na cizí server. Nově se stahuje výhradně přes zabezpečené spojení a jen z domény `fakturoid.cz`; cokoliv jiného se odmítne a zapíše do protokolu.
+
 ## [4.53.2] — 2026-08-05
 
 ### Fixed
