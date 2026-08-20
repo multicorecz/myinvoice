@@ -106,11 +106,13 @@ POZN.: `SupplierLogoAction` má `X-Content-Type-Options: nosniff` + CSP `sandbox
 | `api/templates/invoice/invoice.twig` | `.order-ref` v hlavičkové `.meta` buňce |
 | `styles/invoice.css` | `.order-ref` styl |
 
-**POZN.:** příští migrace ber od **0151** (upstream zabral po 0149). Naše migrace: `0107_user_supplier`,
+**POZN.:** příští migrace ber od **0151** (upstream zabral po 0150). Naše migrace: `0107_user_supplier`,
 `0109_invoice_order_number`, `0115_0_user_supplier_drop_fk`, `0123_user_supplier_supplier_id_int`,
 `0150_fork_user_supplier_to_upstream`. Sdílené prefixy s upstreamem koexistují (runner
 `sort(SORT_STRING)` podle celého názvu — NEPŘEČÍSLOVÁVAT aplikované): `0107`, `0109`, `0115`
-(náš `0115_0` se řadí PŘED upstream `0115_supplier_id_int`), `0123`, `0130`, `0140`/`0141`, `0145`.
+(náš `0115_0` se řadí PŘED upstream `0115_supplier_id_int`), `0123`, `0130`, `0140`/`0141`, `0145`,
+`0150` (náš `0150_fork_…` se řadí PŘED upstream `0150_purchase_vat_classification_30_cleanup`;
+nezávisí na sobě, náš je navíc dávno aplikovaný).
 
 **supplier_id → INT (historie, migrace 0115):** upstream rozšířil `supplier.id` z TINYINT na INT
 a dropoval/re-přidával jen SVÝCH 36 FK — naši `fk_us_supplier` (user_supplier) NEznal, takže by `MODIFY
