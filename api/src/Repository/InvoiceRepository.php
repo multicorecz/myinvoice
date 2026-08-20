@@ -761,6 +761,11 @@ final class InvoiceRepository
 
         $hasExempt = $this->supportsIncomeTaxExempt();
         $hasReminders = $this->supportsAutoSendReminders();
+        // CUSTOM(fork): VALUES má o jeden `?` víc než upstream — kvůli našemu order_number
+        // (20 placeholderů před "draft"). PŘI MERGE HLÍDAT: když upstream přidá sloupec, git
+        // vezme jejich column list, ale VALUES je náš řádek a nesladí se sám → INSERT spadne
+        // na "Column count doesn't match value count" (přesně tak se to rozbilo v 4.4x
+        // s branding_profile_id). Po každém merge, který sáhne do createDraft, přepočítat.
         $sql = 'INSERT INTO invoices
             (invoice_type, parent_invoice_id, client_id, project_id, supplier_id, branding_profile_id,
              issue_date, tax_date, due_date, currency_id, reverse_charge, prices_include_vat, language,
@@ -769,7 +774,7 @@ final class InvoiceRepository
             . ($hasExempt ? ' income_tax_exempt, income_tax_exempt_reason,' : '')
             . ($hasReminders ? ' auto_send_reminders,' : '')
             . ' created_by)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, "draft", ?, ?, ?,'
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, "draft", ?, ?, ?,'
             . ($hasExempt ? ' ?, ?,' : '')
             . ($hasReminders ? ' ?,' : '')
             . ' ?)';

@@ -100,6 +100,14 @@ POZN.: `SupplierLogoAction` má `X-Content-Type-Options: nosniff` + CSP `sandbox
 | Soubor | Změna |
 |---|---|
 | `api/src/Repository/InvoiceRepository.php` | `order_number` v `createDraft` INSERT + `updateDraft` SET + helper `normalizeOrderNumber()` (`find()` ho bere přes `i.*`) |
+
+> ⚠️ **`createDraft` — po každém merge přepočítat placeholdery.** Column list a `VALUES` jsou dva
+> různé řádky. Column list je upstreamový (git ho při merge vezme od nich), ale `VALUES` je NÁŠ
+> (má o jeden `?` navíc kvůli `order_number`), takže se nesladí sám. Když upstream přidá sloupec,
+> INSERT tiše spadne na `SQLSTATE[21S01] Column count doesn't match value count` → **500 při
+> zakládání nové faktury**. Přesně tak se to rozbilo v 4.4x, kdy upstream přidal `branding_profile_id`
+> (commit `b13f1391`, 21. 7. 2026); odhaleno až 20. 8. Pozor: `"draft"` je literál, ne placeholder —
+> počítej ho jako hodnotu pro sloupec `status`. `updateDraft` je imunní (pojmenované `sloupec = ?`).
 | `api/src/Action/Invoice/UpdateInvoiceAction.php` | `'order_number'` v `diffFields()` (audit) |
 | `web/src/api/invoices.ts` | `order_number` v `Invoice` + `InvoicePayload` |
 | `web/src/pages/invoices/InvoiceEditor.vue` | form pole + input v kartě DATUMY (inline popisky) + load/save |
